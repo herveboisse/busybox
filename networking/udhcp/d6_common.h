@@ -40,17 +40,6 @@ struct d6_packet {
 #define d6_msg_type d6_u.d6_msg_type
 #define d6_xid32    d6_u.d6_xid32
 
-struct ip6_udp_d6_packet {
-	struct ip6_hdr ip6;
-	struct udphdr udp;
-	struct d6_packet data;
-} PACKED;
-
-struct udp_d6_packet {
-	struct udphdr udp;
-	struct d6_packet data;
-} PACKED;
-
 /*** Options ***/
 
 struct d6_option {
@@ -177,22 +166,15 @@ int FAST_FUNC d6_read_interface(
 		uint8_t *mac
 );
 
-int FAST_FUNC d6_listen_socket(int port, const char *inf);
+int FAST_FUNC d6_socket(int port, const char *inf);
 
 int FAST_FUNC d6_recv_kernel_packet(
 		struct in6_addr *peer_ipv6,
 		struct d6_packet *packet, int fd
 );
 
-int FAST_FUNC d6_send_raw_packet_from_client_data_ifindex(
-		struct d6_packet *d6_pkt, unsigned d6_pkt_size,
-		const struct in6_addr *src_ipv6, int source_port,
-		const struct in6_addr *dst_ipv6, int dest_port, const uint8_t *dest_arp
-);
-
 int FAST_FUNC d6_send_kernel_packet_from_client_data_ifindex(
 		struct d6_packet *d6_pkt, unsigned d6_pkt_size,
-		const struct in6_addr *src_ipv6, int source_port,
 		const struct in6_addr *dst_ipv6, int dest_port
 );
 

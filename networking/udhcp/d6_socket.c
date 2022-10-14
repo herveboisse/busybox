@@ -94,13 +94,13 @@ int FAST_FUNC d6_read_interface(
 	return retval;
 }
 
-int FAST_FUNC d6_listen_socket(int port, const char *inf)
+int FAST_FUNC d6_socket(int port, const char *inf)
 {
 	int fd;
 	struct sockaddr_in6 addr;
 	char *colon;
 
-	log2("opening listen socket on *:%d %s", port, inf);
+	log2("opening socket on *:%d %s", port, inf);
 	fd = xsocket(PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 
 	if (setsockopt_1(fd, IPPROTO_IPV6, IPV6_V6ONLY) != 0)

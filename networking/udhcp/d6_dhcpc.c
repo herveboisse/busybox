@@ -552,15 +552,10 @@ static int d6_mcast_from_client_data_ifindex(struct d6_packet *packet, uint8_t *
 		0xFF, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02,
 	}};
-	/* IPv6 requires different multicast contents in Ethernet Frame (RFC 2464) */
-	static const uint8_t MAC_DHCP6MCAST_ADDR[6] ALIGN2 = {
-		0x33, 0x33, 0x00, 0x01, 0x00, 0x02,
-	};
 
-	return d6_send_raw_packet_from_client_data_ifindex(
+	return d6_send_kernel_packet_from_client_data_ifindex(
 		packet, (end - (uint8_t*) packet),
-		/*src*/ &client6_data.ll_ip6, CLIENT_PORT6,
-		/*dst*/ &FF02__1_2, SERVER_PORT6, MAC_DHCP6MCAST_ADDR
+		/*dst*/ &FF02__1_2, SERVER_PORT6
 	);
 }
 
@@ -836,7 +831,7 @@ static NOINLINE int send_d6_select(void)
  * about parameter values the client would like to have returned.
  */
 /* NOINLINE: limit stack usage in caller */
-static NOINLINE int send_d6_renew(const struct in6_addr *server_ipv6, const struct in6_addr *our_cur_ipv6)
+static NOINLINE int send_d6_renew(const struct in6_addr *server_ipv6)
 {
 	struct d6_packet packet;
 	uint8_t *opt_ptr;
@@ -860,7 +855,6 @@ static NOINLINE int send_d6_renew(const struct in6_addr *server_ipv6, const stru
 	if (server_ipv6)
 		return d6_send_kernel_packet_from_client_data_ifindex(
 			&packet, (opt_ptr - (uint8_t*) &packet),
-			our_cur_ipv6, CLIENT_PORT6,
 			server_ipv6, SERVER_PORT6
 		);
 	return d6_mcast_from_client_data_ifindex(&packet, opt_ptr);
@@ -869,7 +863,7 @@ static NOINLINE int send_d6_renew(const struct in6_addr *server_ipv6, const stru
 /* Unicast a DHCP release message */
 static
 ALWAYS_INLINE /* one caller, help compiler to use this fact */
-int send_d6_release(const struct in6_addr *server_ipv6, const struct in6_addr *our_cur_ipv6)
+int send_d6_release(const struct in6_addr *server_ipv6)
 {
 	struct d6_packet packet;
 	uint8_t *opt_ptr;
@@ -891,73 +885,8 @@ int send_d6_release(const struct in6_addr *server_ipv6, const struct in6_addr *o
 	bb_info_msg("sending %s", "release");
 	return d6_send_kernel_packet_from_client_data_ifindex(
 		&packet, (opt_ptr - (uint8_t*) &packet),
-		our_cur_ipv6, CLIENT_PORT6,
 		server_ipv6, SERVER_PORT6
 	);
-}
-
-/* Returns -1 on errors that are fatal for the socket, -2 for those that aren't */
-/* NOINLINE: limit stack usage in caller */
-static NOINLINE int d6_recv_raw_packet(struct in6_addr *peer_ipv6, struct d6_packet *d6_pkt, int fd)
-{
-	int bytes;
-	struct ip6_udp_d6_packet packet;
-
-	bytes = safe_read(fd, &packet, sizeof(packet));
-	if (bytes < 0) {
-		log1s("packet read error, ignoring");
-		/* NB: possible down interface, etc. Caller should pause. */
-		return bytes; /* returns -1 */
-	}
-
-	if (bytes < (int) (sizeof(packet.ip6) + sizeof(packet.udp))) {
-		log1s("packet is too short, ignoring");
-		return -2;
-	}
-
-	if (bytes < sizeof(packet.ip6) + ntohs(packet.ip6.ip6_plen)) {
-		/* packet is bigger than sizeof(packet), we did partial read */
-		log1s("oversized packet, ignoring");
-		return -2;
-	}
-
-	/* ignore any extra garbage bytes */
-	bytes = sizeof(packet.ip6) + ntohs(packet.ip6.ip6_plen);
-
-	/* make sure its the right packet for us, and that it passes sanity checks */
-	if (packet.ip6.ip6_nxt != IPPROTO_UDP
-	 || (packet.ip6.ip6_vfc >> 4) != 6
-	 || packet.udp.dest != htons(CLIENT_PORT6)
-	/* || bytes > (int) sizeof(packet) - can't happen */
-	 || packet.udp.len != packet.ip6.ip6_plen
-	) {
-		log1s("unrelated/bogus packet, ignoring");
-		return -2;
-	}
-
-//How to do this for ipv6?
-//	/* verify UDP checksum. IP header has to be modified for this */
-//	memset(&packet.ip, 0, offsetof(struct iphdr, protocol));
-//	/* ip.xx fields which are not memset: protocol, check, saddr, daddr */
-//	packet.ip.tot_len = packet.udp.len; /* yes, this is needed */
-//	check = packet.udp.check;
-//	packet.udp.check = 0;
-//	if (check && check != inet_cksum(&packet, bytes)) {
-//		log1("packet with bad UDP checksum received, ignoring");
-//		return -2;
-//	}
-
-	if (peer_ipv6)
-		*peer_ipv6 = packet.ip6.ip6_src; /* struct copy */
-
-	log2("received %s", "a packet");
-	/* log2 because more informative msg for valid packets is printed later at log1 level */
-	d6_dump_packet(&packet.data);
-
-	bytes -= sizeof(packet.ip6) + sizeof(packet.udp);
-	memset(d6_pkt, 0, sizeof(*d6_pkt));
-	memcpy(d6_pkt, &packet.data, bytes);
-	return bytes;
 }
 
 /*** Main ***/
@@ -965,7 +894,6 @@ static NOINLINE int d6_recv_raw_packet(struct in6_addr *peer_ipv6, struct d6_pac
 /* Values for client_data.listen_mode */
 #define LISTEN_NONE   0
 #define LISTEN_KERNEL 1
-#define LISTEN_RAW    2
 
 /* Values for client_data.state */
 /* initial state: (re)start DHCP negotiation */
@@ -983,91 +911,11 @@ static NOINLINE int d6_recv_raw_packet(struct in6_addr *peer_ipv6, struct d6_pac
 /* release, possibly manually requested (SIGUSR2) */
 #define RELEASED        6
 
-static int d6_raw_socket(int ifindex)
-{
-	int fd;
-	struct sockaddr_ll sock;
-
-	/*
-	 * Comment:
-	 *
-	 *	I've selected not to see LL header, so BPF doesn't see it, too.
-	 *	The filter may also pass non-IP and non-ARP packets, but we do
-	 *	a more complete check when receiving the message in userspace.
-	 *
-	 * and filter shamelessly stolen from:
-	 *
-	 *	http://www.flamewarmaster.de/software/dhcpclient/
-	 *
-	 * There are a few other interesting ideas on that page (look under
-	 * "Motivation").  Use of netlink events is most interesting.  Think
-	 * of various network servers listening for events and reconfiguring.
-	 * That would obsolete sending HUP signals and/or make use of restarts.
-	 *
-	 * Copyright: 2006, 2007 Stefan Rompf <sux@loplof.de>.
-	 * License: GPL v2.
-	 *
-	 * TODO: make conditional?
-	 */
-#if 0
-	static const struct sock_filter filter_instr[] = {
-		/* load 9th byte (protocol) */
-		BPF_STMT(BPF_LD|BPF_B|BPF_ABS, 9),
-		/* jump to L1 if it is IPPROTO_UDP, else to L4 */
-		BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, IPPROTO_UDP, 0, 6),
-		/* L1: load halfword from offset 6 (flags and frag offset) */
-		BPF_STMT(BPF_LD|BPF_H|BPF_ABS, 6),
-		/* jump to L4 if any bits in frag offset field are set, else to L2 */
-		BPF_JUMP(BPF_JMP|BPF_JSET|BPF_K, 0x1fff, 4, 0),
-		/* L2: skip IP header (load index reg with header len) */
-		BPF_STMT(BPF_LDX|BPF_B|BPF_MSH, 0),
-		/* load udp destination port from halfword[header_len + 2] */
-		BPF_STMT(BPF_LD|BPF_H|BPF_IND, 2),
-		/* jump to L3 if udp dport is CLIENT_PORT6, else to L4 */
-		BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, 68, 0, 1),
-		/* L3: accept packet */
-		BPF_STMT(BPF_RET|BPF_K, 0x7fffffff),
-		/* L4: discard packet */
-		BPF_STMT(BPF_RET|BPF_K, 0),
-	};
-	static const struct sock_fprog filter_prog = {
-		.len = sizeof(filter_instr) / sizeof(filter_instr[0]),
-		/* casting const away: */
-		.filter = (struct sock_filter *) filter_instr,
-	};
-#endif
-
-	log2("opening raw socket on ifindex %d", ifindex);
-
-	fd = xsocket(PF_PACKET, SOCK_DGRAM, htons(ETH_P_IPV6));
-
-	memset(&sock, 0, sizeof(sock)); /* let's be deterministic */
-	sock.sll_family = AF_PACKET;
-	sock.sll_protocol = htons(ETH_P_IPV6);
-	sock.sll_ifindex = ifindex;
-	/*sock.sll_hatype = ARPHRD_???;*/
-	/*sock.sll_pkttype = PACKET_???;*/
-	/*sock.sll_halen = ???;*/
-	/*sock.sll_addr[8] = ???;*/
-	xbind(fd, (struct sockaddr *) &sock, sizeof(sock));
-
-#if 0
-	if (CLIENT_PORT6 == 546) {
-		/* Use only if standard port is in use */
-		/* Ignoring error (kernel may lack support for this) */
-		if (setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, &filter_prog,
-				sizeof(filter_prog)) >= 0)
-			log1("attached filter to raw socket fd %d", fd); // log?
-	}
-#endif
-	return fd;
-}
-
 static void change_listen_mode(int new_mode)
 {
 	log1("entering listen mode: %s",
 		new_mode != LISTEN_NONE
-			? (new_mode == LISTEN_KERNEL ? "kernel" : "raw")
+			? "kernel"
 			: "none"
 	);
 
@@ -1077,16 +925,12 @@ static void change_listen_mode(int new_mode)
 		client_data.sockfd = -1;
 	}
 	if (new_mode == LISTEN_KERNEL)
-		client_data.sockfd = d6_listen_socket(CLIENT_PORT6, client_data.interface);
-	else if (new_mode != LISTEN_NONE)
-		client_data.sockfd = d6_raw_socket(client_data.ifindex);
+		client_data.sockfd = d6_socket(CLIENT_PORT6, client_data.interface);
 	/* else LISTEN_NONE: client_data.sockfd stays closed */
 }
 
-static void perform_d6_release(const struct in6_addr *server_ipv6, const struct in6_addr *our_cur_ipv6)
+static void perform_d6_release(const struct in6_addr *server_ipv6)
 {
-	change_listen_mode(LISTEN_NONE);
-
 	/* send release packet */
 	if (client_data.state == BOUND
 	 || client_data.state == RENEWING
@@ -1095,7 +939,7 @@ static void perform_d6_release(const struct in6_addr *server_ipv6, const struct 
 	) {
 		bb_simple_info_msg("unicasting a release");
 		client_data.xid = random_xid(); //TODO: can omit?
-		send_d6_release(server_ipv6, our_cur_ipv6); /* unicast */
+		send_d6_release(server_ipv6); /* unicast */
 	}
 	bb_simple_info_msg("entering released state");
 /*
@@ -1320,6 +1164,8 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 	timeout = 0;
 	lease_remaining = 0;
 
+	change_listen_mode(LISTEN_KERNEL);
+
 	/* Main event loop. select() waits on signal pipe and possibly
 	 * on sockfd.
 	 * "continue" statements in code below jump to the top of the loop.
@@ -1330,13 +1176,6 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 		uint8_t *packet_end;
 
 		//bb_error_msg("sockfd:%d, listen_mode:%d", client_data.sockfd, client_data.listen_mode);
-
-		/* Was opening raw or udp socket here
-		 * if (client_data.listen_mode != LISTEN_NONE && client_data.sockfd < 0),
-		 * but on fast network renew responses return faster
-		 * than we open sockets. Thus this code is moved
-		 * to change_listen_mode(). Thus we open listen socket
-		 * BEFORE we send renew request (see "case BOUND:"). */
 
 		udhcp_sp_fd_set(pfds, client_data.sockfd);
 
@@ -1391,10 +1230,8 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 			switch (client_data.state) {
 			case INIT_SELECTING:
 				if (!solicit_retries || packet_num < solicit_retries) {
-					if (packet_num == 0) {
-						change_listen_mode(LISTEN_RAW);
+					if (packet_num == 0)
 						client_data.xid = random_xid();
-					}
 					/* multicast */
 					if (opt & OPT_l)
 						send_d6_info_request();
@@ -1405,7 +1242,6 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 					continue;
 				}
  leasefail:
-				change_listen_mode(LISTEN_NONE);
 				d6_run_script_no_option("leasefail");
 #if BB_MMU /* -b is not supported on NOMMU */
 				if (opt & OPT_b) { /* background if no lease */
@@ -1450,24 +1286,15 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 				client_data.first_secs = 0; /* make secs field count from 0 */
 			got_SIGUSR1:
 				log1s("entering renew state");
-				change_listen_mode(LISTEN_KERNEL);
 				/* fall right through */
 			case RENEW_REQUESTED: /* in manual (SIGUSR1) renew */
 			case RENEWING:
 				if (packet_num == 0) {
 					/* Send an unicast renew request */
-			/* Sometimes observed to fail (EADDRNOTAVAIL) to bind
-			 * a new UDP socket for sending inside send_renew.
-			 * I hazard to guess existing listening socket
-			 * is somehow conflicting with it, but why is it
-			 * not deterministic then?! Strange.
-			 * Anyway, it does recover by eventually failing through
-			 * into INIT_SELECTING state.
-			 */
 					if (opt & OPT_l)
 						send_d6_info_request();
 					else
-						send_d6_renew(&srv6_buf, requested_ipv6);
+						send_d6_renew(&srv6_buf);
 					timeout = solicit_timeout;
 					packet_num++;
 					continue;
@@ -1475,14 +1302,11 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 				log1s("no response to renew");
 				if (lease_remaining > 30) {
 					/* Some lease time remains, try to renew later */
-					change_listen_mode(LISTEN_NONE);
 					goto BOUND_for_half_lease;
 				}
 				/* Enter rebinding state */
 				client_data.state = REBINDING;
 				log1s("entering rebinding state");
-				/* Switch to bcast receive */
-				change_listen_mode(LISTEN_RAW);
 				packet_num = 0;
 				/* fall right through */
 			case REBINDING:
@@ -1493,13 +1317,12 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 						send_d6_info_request();
 					else /* send a broadcast renew request */
 //TODO: send_d6_renew uses D6_MSG_RENEW message, should we use D6_MSG_REBIND here instead?
-						send_d6_renew(/*server_ipv6:*/ NULL, requested_ipv6);
+						send_d6_renew(/*server_ipv6:*/ NULL);
 					timeout = solicit_timeout;
 					packet_num++;
 					continue;
 				}
 				/* Timed out, enter init state */
-				change_listen_mode(LISTEN_NONE);
 				bb_simple_info_msg("lease lost, entering init state");
 				d6_run_script_no_option("deconfig");
 				client_data.state = INIT_SELECTING;
@@ -1537,26 +1360,23 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 			case BOUND:
 			case RENEWING:
 				/* Try to renew/rebind */
-				change_listen_mode(LISTEN_KERNEL);
 				client_data.state = RENEW_REQUESTED;
 				goto got_SIGUSR1;
 
 			case RENEW_REQUESTED:
 				/* Two SIGUSR1 received, start things over */
-				change_listen_mode(LISTEN_NONE);
 				d6_run_script_no_option("deconfig");
 
 			default:
 			/* case RELEASED: */
 				/* Wake from SIGUSR2-induced deconfigured state */
-				change_listen_mode(LISTEN_NONE);
 			}
 			client_data.state = INIT_SELECTING;
 			/* Kill any timeouts, user wants this to hurry along */
 			timeout = 0;
 			continue;
 		case SIGUSR2:
-			perform_d6_release(&srv6_buf, requested_ipv6);
+			perform_d6_release(&srv6_buf);
 			/* ^^^ switches to LISTEN_NONE */
 			timeout = INT_MAX;
 			continue;
@@ -1576,10 +1396,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 			int len;
 
 			/* A packet is ready, read it */
-			if (client_data.listen_mode == LISTEN_KERNEL)
-				len = d6_recv_kernel_packet(&srv6_buf, &packet, client_data.sockfd);
-			else
-				len = d6_recv_raw_packet(&srv6_buf, &packet, client_data.sockfd);
+			len = d6_recv_kernel_packet(&srv6_buf, &packet, client_data.sockfd);
 			if (len == -1) {
 				/* Error is severe, reopen socket */
 				bb_simple_error_msg("read error: "STRERROR_FMT", reopening socket" STRERROR_ERRNO);
@@ -1618,7 +1435,6 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 				unsigned address_timeout;
 				unsigned prefix_timeout;
  type_is_ok:
-				change_listen_mode(LISTEN_NONE);
 
 				address_timeout = 0;
 				prefix_timeout = 0;
@@ -1819,7 +1635,6 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 
 				if (packet.d6_msg_type == D6_MSG_ADVERTISE) {
 					/* enter requesting state */
-					change_listen_mode(LISTEN_RAW);
 					client_data.state = REQUESTING;
 					timeout = 0;
 					packet_num = 0;
@@ -1879,9 +1694,10 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 
  ret0:
 	if (opt & OPT_R) /* release on quit */
-		perform_d6_release(&srv6_buf, requested_ipv6);
+		perform_d6_release(&srv6_buf);
 	retval = 0;
  ret:
+	change_listen_mode(LISTEN_NONE);
 	/*if (client_data.pidfile) - remove_pidfile has its own check */
 		remove_pidfile(client_data.pidfile);
 	return retval;
