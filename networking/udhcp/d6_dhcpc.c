@@ -784,7 +784,7 @@ static NOINLINE int send_d6_select(void)
 	return d6_mcast_from_client_data_ifindex(&packet, opt_ptr);
 }
 
-/* Unicast or broadcast a DHCP renew message
+/* Send a DHCP renew message
  *
  * RFC 3315 18.1.3. Creation and Transmission of Renew Messages
  *
@@ -831,7 +831,7 @@ static NOINLINE int send_d6_select(void)
  * about parameter values the client would like to have returned.
  */
 /* NOINLINE: limit stack usage in caller */
-static NOINLINE int send_d6_renew(const struct in6_addr *server_ipv6)
+static NOINLINE int send_d6_renew(void)
 {
 	struct d6_packet packet;
 	uint8_t *opt_ptr;
@@ -852,18 +852,13 @@ static NOINLINE int send_d6_renew(const struct in6_addr *server_ipv6)
 	opt_ptr = add_d6_client_options(opt_ptr);
 
 	bb_info_msg("sending %s", "renew");
-	if (server_ipv6)
-		return d6_send_kernel_packet_from_client_data_ifindex(
-			&packet, (opt_ptr - (uint8_t*) &packet),
-			server_ipv6, SERVER_PORT6
-		);
 	return d6_mcast_from_client_data_ifindex(&packet, opt_ptr);
 }
 
-/* Unicast a DHCP release message */
+/* Send a DHCP release message */
 static
 ALWAYS_INLINE /* one caller, help compiler to use this fact */
-int send_d6_release(const struct in6_addr *server_ipv6)
+int send_d6_release(void)
 {
 	struct d6_packet packet;
 	uint8_t *opt_ptr;
@@ -883,10 +878,7 @@ int send_d6_release(const struct in6_addr *server_ipv6)
 		opt_ptr = mempcpy(opt_ptr, ci->data, D6_OPT_DATA + 2+2 + 6);
 
 	bb_info_msg("sending %s", "release");
-	return d6_send_kernel_packet_from_client_data_ifindex(
-		&packet, (opt_ptr - (uint8_t*) &packet),
-		server_ipv6, SERVER_PORT6
-	);
+	return d6_mcast_from_client_data_ifindex(&packet, opt_ptr);
 }
 
 /*** Main ***/
@@ -902,9 +894,9 @@ int send_d6_release(const struct in6_addr *server_ipv6)
 #define REQUESTING      1
 /* Request/Renew was sent, Reply reply received */
 #define BOUND           2
-/* half of lease passed, want to renew it by sending unicast renew requests */
+/* half of lease passed, want to renew it by sending renew requests */
 #define RENEWING        3
-/* renew requests were not answered, lease is almost over, send broadcast renew */
+/* renew requests were not answered, lease is almost over, send renew */
 #define REBINDING       4
 /* manually requested renew (SIGUSR1) */
 #define RENEW_REQUESTED 5
@@ -929,7 +921,7 @@ static void change_listen_mode(int new_mode)
 	/* else LISTEN_NONE: client_data.sockfd stays closed */
 }
 
-static void perform_d6_release(const struct in6_addr *server_ipv6)
+static void perform_d6_release(void)
 {
 	/* send release packet */
 	if (client_data.state == BOUND
@@ -937,9 +929,9 @@ static void perform_d6_release(const struct in6_addr *server_ipv6)
 	 || client_data.state == REBINDING
 	 || client_data.state == RENEW_REQUESTED
 	) {
-		bb_simple_info_msg("unicasting a release");
+		bb_simple_info_msg("sending a release");
 		client_data.xid = random_xid(); //TODO: can omit?
-		send_d6_release(server_ipv6); /* unicast */
+		send_d6_release();
 	}
 	bb_simple_info_msg("entering released state");
 /*
@@ -1022,7 +1014,6 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 	int tryagain_timeout = 20;
 	int solicit_timeout = 3;
 	int solicit_retries = 3;
-	struct in6_addr srv6_buf;
 	struct in6_addr ipv6_buf;
 	struct in6_addr *requested_ipv6;
 	int packet_num;
@@ -1290,11 +1281,11 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 			case RENEW_REQUESTED: /* in manual (SIGUSR1) renew */
 			case RENEWING:
 				if (packet_num == 0) {
-					/* Send an unicast renew request */
+					/* Send a renew request */
 					if (opt & OPT_l)
 						send_d6_info_request();
 					else
-						send_d6_renew(&srv6_buf);
+						send_d6_renew();
 					timeout = solicit_timeout;
 					packet_num++;
 					continue;
@@ -1310,14 +1301,13 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 				packet_num = 0;
 				/* fall right through */
 			case REBINDING:
-				/* Lease is *really* about to run out,
-				 * try to find DHCP server using broadcast */
+				/* Lease is *really* about to run out */
 				if (lease_remaining > 0 && packet_num < 3) {
 					if (opt & OPT_l)
 						send_d6_info_request();
-					else /* send a broadcast renew request */
+					else
 //TODO: send_d6_renew uses D6_MSG_RENEW message, should we use D6_MSG_REBIND here instead?
-						send_d6_renew(/*server_ipv6:*/ NULL);
+						send_d6_renew();
 					timeout = solicit_timeout;
 					packet_num++;
 					continue;
@@ -1376,7 +1366,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 			timeout = 0;
 			continue;
 		case SIGUSR2:
-			perform_d6_release(&srv6_buf);
+			perform_d6_release();
 			/* ^^^ switches to LISTEN_NONE */
 			timeout = INT_MAX;
 			continue;
@@ -1396,7 +1386,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 			int len;
 
 			/* A packet is ready, read it */
-			len = d6_recv_kernel_packet(&srv6_buf, &packet, client_data.sockfd);
+			len = d6_recv_kernel_packet(/*server_ipv6:*/ NULL, &packet, client_data.sockfd);
 			if (len == -1) {
 				/* Error is severe, reopen socket */
 				bb_simple_error_msg("read error: "STRERROR_FMT", reopening socket" STRERROR_ERRNO);
@@ -1694,7 +1684,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 
  ret0:
 	if (opt & OPT_R) /* release on quit */
-		perform_d6_release(&srv6_buf);
+		perform_d6_release();
 	retval = 0;
  ret:
 	change_listen_mode(LISTEN_NONE);
