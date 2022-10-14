@@ -1163,10 +1163,7 @@ static void client_background(void)
 //usage:     "\n	-O OPT		Request option OPT from server (cumulative)"
 //usage:     "\n	-x OPT:VAL	Include option OPT in sent packets (cumulative)"
 //usage:     "\n			Examples of string, numeric, and hex byte opts:"
-//usage:     "\n			-x hostname:bbox - option 12"
-//usage:     "\n			-x lease:3600 - option 51 (lease time)"
-//usage:     "\n			-x 0x3d:0100BEEFC0FFEE - option 61 (client id)"
-//usage:     "\n			-x 14:'\"dumpfile\"' - option 14 (shell-quoted)"
+//usage:     "\n			-x 1:0003000100BEEFC0FFEE - option 1 (client id)"
 //usage:	IF_UDHCP_VERBOSE(
 //usage:     "\n	-v		Verbose"
 //usage:	)
