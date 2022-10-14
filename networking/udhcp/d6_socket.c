@@ -103,6 +103,9 @@ int FAST_FUNC d6_listen_socket(int port, const char *inf)
 	log2("opening listen socket on *:%d %s", port, inf);
 	fd = xsocket(PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 
+	if (setsockopt_1(fd, IPPROTO_IPV6, IPV6_V6ONLY) != 0)
+		bb_simple_perror_msg_and_die("IPV6_V6ONLY");
+
 	setsockopt_reuseaddr(fd);
 
 	/* SO_BINDTODEVICE doesn't work on ethernet aliases (ethN:M) */
