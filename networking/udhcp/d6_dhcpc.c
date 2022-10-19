@@ -152,9 +152,10 @@ enum {
 	OPT_U = 1 << 16,
 	OPT_V = 1 << 17,
 	OPT_y = 1 << 18,
-	OPT_d = 1 << 19,
+	OPT_z = 1 << 19,
+	OPT_d = 1 << 20,
 /* The rest has variable bit positions, need to be clever */
-	OPTBIT_d = 19,
+	OPTBIT_d = 20,
 	USE_FOR_MMU(             OPTBIT_b,)
 	///IF_FEATURE_UDHCPC_ARPING(OPTBIT_a,)
 	IF_FEATURE_UDHCP_PORT(   OPTBIT_P,)
@@ -925,6 +926,10 @@ static void change_listen_mode(int new_mode)
 			setsockopt_SOL_SOCKET_int(client_data.sockfd, SO_PRIORITY,
 				client_data.sock_prio) != 0)
 		bb_simple_perror_msg("error setting SO_PRIORITY");
+	if (client_data.sockfd >= 0 && client_data.l3_prio >= 0 &&
+			setsockopt_int(client_data.sockfd, IPPROTO_IPV6, IPV6_TCLASS,
+				client_data.l3_prio << 2) != 0)
+		bb_simple_perror_msg("error setting IPV6_TCLASS");
 }
 
 static void perform_d6_release(void)
@@ -968,7 +973,7 @@ static void client_background(void)
 //usage:#define udhcpc6_trivial_usage
 //usage:       "[-fbq"IF_UDHCP_VERBOSE("v")"R] [-t N] [-T SEC] [-A SEC|-n] [-i IFACE] [-s PROG]\n"
 //usage:       "	[-p PIDFILE]"IF_FEATURE_UDHCP_PORT(" [-P PORT]")" [-ldo] [-r IPv6] [-x OPT:VAL]... [-O OPT]...\n"
-//usage:       "	[-U U1[,U2,...]] [-V ID[,V1,...]] [-y SOCKPRIO]"
+//usage:       "	[-U U1[,U2,...]] [-V ID[,V1,...]] [-y SOCKPRIO] [-z L3PRIO]"
 //usage:#define udhcpc6_full_usage "\n"
 //usage:     "\n	-i IFACE	Interface to use (default "CONFIG_UDHCPC_DEFAULT_INTERFACE")"
 //usage:     "\n	-p FILE		Create pidfile"
@@ -1003,6 +1008,7 @@ static void client_background(void)
 //usage:     "\n	-U U1[,U2,...]	User class"
 //usage:     "\n	-V ID[,V1,...]	Vendor class"
 //usage:     "\n	-y SOCKPRIO	Set priority on socket"
+//usage:     "\n	-z L3PRIO	Set DSCP on IP packets"
 //usage:	IF_UDHCP_VERBOSE(
 //usage:     "\n	-v		Verbose"
 //usage:	)
@@ -1037,6 +1043,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 	IF_FEATURE_UDHCP_PORT(SERVER_PORT6 = 547;)
 	IF_FEATURE_UDHCP_PORT(CLIENT_PORT6 = 546;)
 	client_data.sock_prio = -1;
+	client_data.l3_prio = -1;
 	client_data.interface = CONFIG_UDHCPC_DEFAULT_INTERFACE;
 	client_data.script = CONFIG_UDHCPC6_DEFAULT_SCRIPT;
 	client_data.sockfd = -1;
@@ -1047,8 +1054,8 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 
 	/* Parse command line */
 	opt = getopt32long(argv, "^"
-		/* O,x: list; -T,-t,-A,-y take numeric param */
-		"i:np:qRr:s:T:+t:+SA:+O:*ox:*flU:V:y:+d"
+		/* O,x: list; -T,-t,-A,-y,-z take numeric param */
+		"i:np:qRr:s:T:+t:+SA:+O:*ox:*flU:V:y:+z:+d"
 		USE_FOR_MMU("b")
 		///IF_FEATURE_UDHCPC_ARPING("a")
 		IF_FEATURE_UDHCP_PORT("P:")
@@ -1061,7 +1068,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 		, &list_O
 		, &list_x
 		, &str_U, &str_V
-		, &client_data.sock_prio /* y */
+		, &client_data.sock_prio, &client_data.l3_prio /* y,z */
 		IF_FEATURE_UDHCP_PORT(, &str_P)
 		IF_UDHCP_VERBOSE(, &dhcp_verbose)
 	);
