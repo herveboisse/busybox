@@ -1271,6 +1271,7 @@ int wait_for_exitstatus(pid_t pid) FAST_FUNC;
 /************************************************************************/
 /* Same as wait4pid(spawn(argv)), but with NOFORK/NOEXEC if configured: */
 int spawn_and_wait(char **argv) FAST_FUNC;
+int spawn_and_wait_stdout(char **argv, uint8_t *buf, size_t *len) FAST_FUNC;
 /* Does NOT check that applet is NOFORK, just blindly runs it */
 int run_nofork_applet(int applet_no, char **argv) FAST_FUNC;
 void run_noexec_applet_and_exit(int a, const char *name, char **argv) NORETURN FAST_FUNC;

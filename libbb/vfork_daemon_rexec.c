@@ -248,6 +248,50 @@ int FAST_FUNC spawn_and_wait(char **argv)
 	return wait4pid(rc);
 }
 
+int FAST_FUNC spawn_and_wait_stdout(char **argv, uint8_t *buf, size_t *len)
+{
+	int rc = -1, fd[2];
+	pid_t pid;
+	ssize_t slen = -1;
+
+	if (pipe(fd) < 0)
+		return -1;
+
+	fflush_all();
+
+	pid = vfork();
+	if (pid < 0) {
+		/* error */
+		close(fd[0]);
+		close(fd[1]);
+	} else if (pid == 0) {
+		/* child */
+		close(fd[0]);
+		close(STDIN_FILENO);
+		xdup2(fd[1], STDOUT_FILENO);
+		close(fd[1]);
+
+		BB_EXECVP(argv[0], argv);
+		/* should not reach this point */
+		_exit(111);
+	} else {
+		/* parent */
+		close(fd[1]);
+
+		rc = wait4pid(pid);
+		if (rc == 0)
+			slen = read(fd[0], buf, *len);
+		close(fd[0]);
+
+		if (slen >= 0) {
+			*len = (size_t)slen;
+			rc = 0;
+		}
+	}
+
+	return rc;
+}
+
 #if !BB_MMU
 void FAST_FUNC re_exec(char **argv)
 {

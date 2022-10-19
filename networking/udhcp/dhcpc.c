@@ -637,10 +637,27 @@ static void add_client_options(struct dhcp_packet *packet)
 
 	/* Add -x options if any */
 	{
-		struct option_set *curr = client_data.options;
-		while (curr) {
-			udhcp_add_binary_option(packet, curr->data);
-			curr = curr->next;
+		struct option_set *curr;
+		uint8_t buffer[OPT_DATA + 255], *p;
+		for (curr = client_data.options; curr; curr = curr->next) {
+			if (curr->dynamic) {
+				char *argv[2];
+				size_t buflen = sizeof(buffer) - OPT_DATA;
+
+				argv[0] = (char *)&curr->data[OPT_DATA];
+				argv[1] = NULL;
+				if (spawn_and_wait_stdout(argv, &buffer[OPT_DATA], &buflen) != 0)
+					continue;
+				if (buflen <= 0)
+					continue;
+
+				buffer[OPT_CODE] = curr->data[OPT_CODE];
+				buffer[OPT_LEN] = buflen;
+				p = buffer;
+			} else {
+				p = curr->data;
+			}
+			udhcp_add_binary_option(packet, p);
 		}
 //		if (client_data.sname)
 //			strncpy((char*)packet->sname, client_data.sname, sizeof(packet->sname) - 1);
@@ -1194,11 +1211,12 @@ static void client_background(void)
 //usage:     "\n	-o		Don't request any options (unless -O is given)"
 //usage:     "\n	-O OPT		Request option OPT from server (cumulative)"
 //usage:     "\n	-x OPT:VAL	Include option OPT in sent packets (cumulative)"
-//usage:     "\n			Examples of string, numeric, and hex byte opts:"
+//usage:     "\n			Examples of string, numeric, hex byte and dynamic opts:"
 //usage:     "\n			-x hostname:bbox - option 12"
 //usage:     "\n			-x lease:3600 - option 51 (lease time)"
 //usage:     "\n			-x 0x3d:0100BEEFC0FFEE - option 61 (client id)"
 //usage:     "\n			-x 14:'\"dumpfile\"' - option 14 (shell-quoted)"
+//usage:     "\n			-x 90:/usr/bin/generator - option 90 (authentication, dynamically generated)"
 //usage:     "\n	-F NAME		Ask server to update DNS mapping for NAME"
 //usage:     "\n	-U U1[,U2,...]	User class"
 //usage:     "\n	-V VENDOR	Vendor identifier (default 'udhcp VERSION')"
@@ -1280,7 +1298,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 		len = strlen(str_F);
 		p = udhcp_insert_new_option(
 				&client_data.options, DHCP_FQDN,
-				len + 3, /*dhcp6:*/ 0);
+				len + 3, /*dynamic:*/ 0, /*dhcp6:*/ 0);
 		/* Flag bits: 0000NEOS
 		 * S: 1 = Client requests server to update A RR in DNS as well as PTR
 		 * O: 1 = Server indicates to client that DNS has been updated regardless
@@ -1334,7 +1352,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 		unsigned len = strnlen(str_V, 254);
 		p = udhcp_insert_new_option(
 				&client_data.options, DHCP_VENDOR,
-				len, /*dhcp6:*/ 0);
+				len, /*dynamic:*/ 0, /*dhcp6:*/ 0);
 		memcpy(p + OPT_DATA, str_V, len); /* do not store NUL byte */
 	}
 	if (opt & OPT_U) {
@@ -1348,7 +1366,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 		/* not suppressed and not set, create default client ID */
 		clientid_mac_ptr = udhcp_insert_new_option(
 				&client_data.options, DHCP_CLIENT_ID,
-				1 + 6, /*dhcp6:*/ 0);
+				1 + 6, /*dynamic:*/ 0, /*dhcp6:*/ 0);
 		clientid_mac_ptr[OPT_DATA] = 1; /* type: ethernet */
 		clientid_mac_ptr += OPT_DATA + 1; /* skip option code, len, ethernet */
 	}

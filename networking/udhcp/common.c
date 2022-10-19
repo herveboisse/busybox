@@ -455,6 +455,7 @@ void* FAST_FUNC udhcp_insert_new_option(
 		struct option_set **opt_list,
 		unsigned code,
 		unsigned length,
+		bool dynamic,
 		bool dhcpv6)
 {
 	IF_NOT_UDHCPC6(bool dhcpv6 = 0;)
@@ -473,6 +474,7 @@ void* FAST_FUNC udhcp_insert_new_option(
 		new->data[D6_OPT_LEN] = length >> 8;
 		new->data[D6_OPT_LEN + 1] = length & 0xff;
 	}
+	new->dynamic = dynamic;
 
 	curr = opt_list;
 //FIXME: DHCP6 codes > 255!!
@@ -554,6 +556,7 @@ static NOINLINE void attach_option(
 	IF_NOT_UDHCPC6(bool dhcpv6 = 0;)
 	struct option_set *existing;
 	char *allocated = NULL;
+	bool dynamic;
 
 	if ((optflag->flags & OPTION_TYPE_MASK) == OPTION_BIN) {
 		const char *end;
@@ -570,11 +573,12 @@ static NOINLINE void attach_option(
 		allocated = buffer = (char *)dname_enc(/*NULL, 0,*/ buffer, &length);
 	}
 #endif
+	dynamic = ((optflag->flags & OPTION_TYPE_MASK) == OPTION_DYNAMIC);
 
 	existing = udhcp_find_option(*opt_list, optflag->code, dhcpv6);
 	if (!existing) {
 		/* make a new option */
-		uint8_t *p = udhcp_insert_new_option(opt_list, optflag->code, length, dhcpv6);
+		uint8_t *p = udhcp_insert_new_option(opt_list, optflag->code, length, dynamic, dhcpv6);
 		if (!dhcpv6)
 			memcpy(p + OPT_DATA, buffer, length);
 		else
@@ -756,6 +760,16 @@ int FAST_FUNC udhcp_str2optset(const char *const_str, void *arg,
 					userdef_optflag.flags = OPTION_STRING;
 					goto case_OPTION_STRING;
 				}
+			}
+			/* Is it a dynamically generated option ? */
+			if (val[0] == '/') {
+				userdef_optflag.flags = OPTION_DYNAMIC;
+				length = strnlen(val, 254);
+				val[length] = '\0';
+				length++;
+				opt = val;
+				retval = 1;
+				break;
 			}
 			/* No: hex-str option, handled in attach_option() */
 			opt = val;

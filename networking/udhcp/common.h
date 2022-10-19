@@ -118,6 +118,7 @@ enum {
 #if ENABLE_FEATURE_UDHCP_RFC3397
 	OPTION_SIP_SERVERS,
 #endif
+	OPTION_DYNAMIC,
 
 	OPTION_TYPE_MASK = 0x0f,
 	/* Client requests this option by default */
@@ -226,6 +227,7 @@ struct dhcp_optflag {
 
 struct option_set {
 	uint8_t *data;
+	bool dynamic;
 	struct option_set *next;
 };
 
@@ -345,6 +347,7 @@ int FAST_FUNC udhcp_str2nip(const char *str, void *arg);
 void* FAST_FUNC udhcp_insert_new_option(struct option_set **opt_list,
 		unsigned code,
 		unsigned length,
+		bool dynamic,
 		bool dhcpv6);
 
 void FAST_FUNC udhcp_parse_user_class(struct option_set **opt_list,

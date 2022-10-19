@@ -512,6 +512,7 @@ static uint8_t *add_d6_client_options(uint8_t *ptr)
 	uint8_t *start = ptr;
 	unsigned option;
 	uint16_t len;
+	uint8_t buffer[D6_OPT_DATA + 255], *p;
 
 	ptr += 4;
 	for (option = 1; option < 256; option++) {
@@ -536,11 +537,29 @@ static uint8_t *add_d6_client_options(uint8_t *ptr)
 #endif
 
 	/* Add -x options if any */
-	curr = client_data.options;
-	while (curr) {
-		len = (curr->data[D6_OPT_LEN] << 8) | curr->data[D6_OPT_LEN + 1];
-		ptr = mempcpy(ptr, curr->data, D6_OPT_DATA + len);
-		curr = curr->next;
+	for (curr = client_data.options; curr; curr = curr->next) {
+		if (curr->dynamic) {
+			char *argv[2];
+			size_t buflen = sizeof(buffer) - D6_OPT_DATA;
+
+			argv[0] = (char *)&curr->data[D6_OPT_DATA];
+			argv[1] = NULL;
+			if (spawn_and_wait_stdout(argv, &buffer[D6_OPT_DATA], &buflen) != 0)
+				continue;
+			if (buflen <= 0)
+				continue;
+
+			buffer[D6_OPT_CODE] = curr->data[D6_OPT_CODE];
+			buffer[D6_OPT_CODE + 1] = curr->data[D6_OPT_CODE + 1];
+			buffer[D6_OPT_LEN] = buflen >> 8;
+			buffer[D6_OPT_LEN + 1] = buflen & 0xff;
+			p = buffer;
+			len = buflen;
+		} else {
+			p = curr->data;
+			len = (curr->data[D6_OPT_LEN] << 8) | curr->data[D6_OPT_LEN + 1];
+		}
+		ptr = mempcpy(ptr, p, D6_OPT_DATA + len);
 	}
 
 	return ptr;
@@ -1161,8 +1180,9 @@ static void client_background(void)
 //usage:     "\n	-o		Don't request any options (unless -O is given)"
 //usage:     "\n	-O OPT		Request option OPT from server (cumulative)"
 //usage:     "\n	-x OPT:VAL	Include option OPT in sent packets (cumulative)"
-//usage:     "\n			Examples of string, numeric, and hex byte opts:"
+//usage:     "\n			Examples of string, numeric, hex byte and dynamic opts:"
 //usage:     "\n			-x 1:0003000100BEEFC0FFEE - option 1 (client id)"
+//usage:     "\n			-x 11:/usr/bin/generator - option 11 (authentication, dynamically generated)"
 //usage:	IF_UDHCP_VERBOSE(
 //usage:     "\n	-v		Verbose"
 //usage:	)
@@ -1276,7 +1296,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 		/* not set, set the default client ID */
 		clientid_mac_ptr = udhcp_insert_new_option(
 				&client_data.options, D6_OPT_CLIENTID,
-				2+2 + 6, /*dhcp6:*/ 1);
+				2+2 + 6, /*dynamic:*/ 0, /*dhcp6:*/ 1);
 		clientid_mac_ptr += 2+2; /* skip option code, len */
 		clientid_mac_ptr[1] = 3; /* DUID-LL */
 		clientid_mac_ptr[3] = 1; /* type: ethernet */
