@@ -104,8 +104,6 @@ int FAST_FUNC d6_listen_socket(int port, const char *inf)
 	fd = xsocket(PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 
 	setsockopt_reuseaddr(fd);
-	if (setsockopt_broadcast(fd) == -1)
-		bb_simple_perror_msg_and_die("SO_BROADCAST");
 
 	/* SO_BINDTODEVICE doesn't work on ethernet aliases (ethN:M) */
 	colon = strrchr(inf, ':');
