@@ -109,7 +109,7 @@ int FAST_FUNC udhcp_recv_kernel_packet(struct dhcp_packet *packet, int fd)
 int FAST_FUNC udhcp_send_raw_packet(struct dhcp_packet *dhcp_pkt,
 		uint32_t source_nip, int source_port,
 		uint32_t dest_nip, int dest_port, const uint8_t *dest_arp,
-		int ifindex)
+		int prio, int ifindex)
 {
 	struct sockaddr_ll dest_sll;
 	struct ip_udp_dhcp_packet packet;
@@ -141,6 +141,9 @@ int FAST_FUNC udhcp_send_raw_packet(struct dhcp_packet *dhcp_pkt,
 		msg = "bind(%s)";
 		goto ret_close;
 	}
+
+	if (prio >= 0 && setsockopt_SOL_SOCKET_int(fd, SO_PRIORITY, prio) != 0)
+		bb_simple_perror_msg("error setting SO_PRIORITY");
 
 	/* We were sending full-sized DHCP packets (zero padded),
 	 * but some badly configured servers were seen dropping them.
@@ -195,7 +198,7 @@ int FAST_FUNC udhcp_send_raw_packet(struct dhcp_packet *dhcp_pkt,
 int FAST_FUNC udhcp_send_kernel_packet(struct dhcp_packet *dhcp_pkt,
 		uint32_t source_nip, int source_port,
 		uint32_t dest_nip, int dest_port,
-		const char *ifname)
+		int prio, const char *ifname)
 {
 	struct sockaddr_in sa;
 	unsigned padding;
@@ -209,6 +212,9 @@ int FAST_FUNC udhcp_send_kernel_packet(struct dhcp_packet *dhcp_pkt,
 		goto ret_msg;
 	}
 	setsockopt_reuseaddr(fd);
+
+	if (prio >= 0 && setsockopt_SOL_SOCKET_int(fd, SO_PRIORITY, prio) != 0)
+		bb_simple_perror_msg("error setting SO_PRIORITY");
 
 	/* If interface carrier goes down, unless we
 	 * bind socket to a particular netdev, the packet

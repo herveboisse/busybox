@@ -603,7 +603,7 @@ static void send_packet_to_client(struct dhcp_packet *dhcp_pkt, int force_broadc
 	udhcp_send_raw_packet(dhcp_pkt,
 		/*src*/ server_data.server_nip, SERVER_PORT,
 		/*dst*/ ciaddr, CLIENT_PORT, chaddr,
-		server_data.ifindex);
+		/*prio*/ -1, server_data.ifindex);
 }
 
 /* Send a packet to gateway_nip using the kernel ip stack */
@@ -618,7 +618,7 @@ static void send_packet_to_relay(struct dhcp_packet *dhcp_pkt)
 	 * even those which are clients' requests and would normally
 	 * (i.e. without relay) use CLIENT_PORT. See RFC 1542.
 	 */
-			server_data.interface);
+			/*prio*/ -1, server_data.interface);
 }
 
 static void send_packet(struct dhcp_packet *dhcp_pkt, int force_broadcast)
