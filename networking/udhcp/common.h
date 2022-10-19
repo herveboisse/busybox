@@ -371,12 +371,12 @@ int udhcp_recv_kernel_packet(struct dhcp_packet *packet, int fd) FAST_FUNC;
 int udhcp_send_raw_packet(struct dhcp_packet *dhcp_pkt,
 		uint32_t source_nip, int source_port,
 		uint32_t dest_nip, int dest_port, const uint8_t *dest_arp,
-		int prio, int ifindex) FAST_FUNC;
+		int prio, uint8_t tos, int ifindex) FAST_FUNC;
 
 int udhcp_send_kernel_packet(struct dhcp_packet *dhcp_pkt,
 		uint32_t source_nip, int source_port,
 		uint32_t dest_nip, int dest_port,
-		int prio, const char *ifname) FAST_FUNC;
+		int prio, int tos, const char *ifname) FAST_FUNC;
 
 void udhcp_sp_setup(void) FAST_FUNC;
 void udhcp_sp_fd_set(struct pollfd *pfds, int extra_fd) FAST_FUNC;

@@ -109,7 +109,7 @@ int FAST_FUNC udhcp_recv_kernel_packet(struct dhcp_packet *packet, int fd)
 int FAST_FUNC udhcp_send_raw_packet(struct dhcp_packet *dhcp_pkt,
 		uint32_t source_nip, int source_port,
 		uint32_t dest_nip, int dest_port, const uint8_t *dest_arp,
-		int prio, int ifindex)
+		int prio, uint8_t tos, int ifindex)
 {
 	struct sockaddr_ll dest_sll;
 	struct ip_udp_dhcp_packet packet;
@@ -178,6 +178,7 @@ int FAST_FUNC udhcp_send_raw_packet(struct dhcp_packet *dhcp_pkt,
 	packet.ip.tot_len = htons(IP_UDP_DHCP_SIZE - padding);
 	packet.ip.ihl = sizeof(packet.ip) >> 2;
 	packet.ip.version = IPVERSION;
+	packet.ip.tos = tos;
 	packet.ip.ttl = IPDEFTTL;
 	packet.ip.check = inet_cksum(&packet.ip, sizeof(packet.ip));
 
@@ -198,7 +199,7 @@ int FAST_FUNC udhcp_send_raw_packet(struct dhcp_packet *dhcp_pkt,
 int FAST_FUNC udhcp_send_kernel_packet(struct dhcp_packet *dhcp_pkt,
 		uint32_t source_nip, int source_port,
 		uint32_t dest_nip, int dest_port,
-		int prio, const char *ifname)
+		int prio, int tos, const char *ifname)
 {
 	struct sockaddr_in sa;
 	unsigned padding;
@@ -215,6 +216,9 @@ int FAST_FUNC udhcp_send_kernel_packet(struct dhcp_packet *dhcp_pkt,
 
 	if (prio >= 0 && setsockopt_SOL_SOCKET_int(fd, SO_PRIORITY, prio) != 0)
 		bb_simple_perror_msg("error setting SO_PRIORITY");
+
+	if (tos >= 0 && setsockopt_int(fd, IPPROTO_IP, IP_TOS, tos) != 0)
+		bb_simple_perror_msg("error setting IP_TOS");
 
 	/* If interface carrier goes down, unless we
 	 * bind socket to a particular netdev, the packet

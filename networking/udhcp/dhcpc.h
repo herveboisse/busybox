@@ -12,6 +12,7 @@ struct client_data_t {
 	IF_FEATURE_UDHCP_PORT(uint16_t port;)
 	int ifindex;                    /* Index number of the interface to use */
 	int sock_prio;
+	int l3_prio;
 	uint32_t xid;
 	uint8_t opt_mask[256 / 8];      /* Bitmask of options to send (-O option) */
 // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ TODO: DHCPv6 has 16-bit option numbers

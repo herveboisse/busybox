@@ -101,9 +101,10 @@ enum {
 	OPT_f = 1 << 17,
 	OPT_U = 1 << 18,
 	OPT_y = 1 << 19,
-	OPT_B = 1 << 20,
+	OPT_z = 1 << 20,
+	OPT_B = 1 << 21,
 /* The rest has variable bit positions, need to be clever */
-	OPTBIT_B = 20,
+	OPTBIT_B = 21,
 	USE_FOR_MMU(             OPTBIT_b,)
 	IF_FEATURE_UDHCPC_ARPING(OPTBIT_a,)
 	IF_FEATURE_UDHCP_PORT(   OPTBIT_P,)
@@ -692,19 +693,29 @@ static void add_serverid_and_clientid_options(struct dhcp_packet *packet, uint32
 
 static int raw_bcast_from_client_data_ifindex(struct dhcp_packet *packet, uint32_t src_nip)
 {
+	uint8_t tos = 0;
+
+	if (client_data.l3_prio >= 0)
+		tos = client_data.l3_prio << 2;
+
 	return udhcp_send_raw_packet(packet,
 		/*src*/ src_nip, CLIENT_PORT,
 		/*dst*/ INADDR_BROADCAST, SERVER_PORT, MAC_BCAST_ADDR,
-		client_data.sock_prio, client_data.ifindex);
+		client_data.sock_prio, tos, client_data.ifindex);
 }
 
 static int bcast_or_ucast(struct dhcp_packet *packet, uint32_t ciaddr, uint32_t server)
 {
+	uint8_t tos = 0;
+
+	if (client_data.l3_prio >= 0)
+		tos = client_data.l3_prio << 2;
+
 	if (server)
 		return udhcp_send_kernel_packet(packet,
 			ciaddr, CLIENT_PORT,
 			server, SERVER_PORT,
-			client_data.sock_prio, client_data.interface);
+			client_data.sock_prio, tos, client_data.interface);
 	return raw_bcast_from_client_data_ifindex(packet, ciaddr);
 }
 
@@ -1156,7 +1167,7 @@ static void client_background(void)
 //usage:       "[-fbq"IF_UDHCP_VERBOSE("v")"RB]"IF_FEATURE_UDHCPC_ARPING(" [-a[MSEC]]")" [-t N] [-T SEC] [-A SEC|-n]\n"
 //usage:       "	[-i IFACE]"IF_FEATURE_UDHCP_PORT(" [-P PORT]")" [-s PROG] [-p PIDFILE]\n"
 //usage:       "	[-oC] [-r IP] [-U U1[,U2,...]] [-V VENDOR] [-F NAME] [-x OPT:VAL]... [-O OPT]...\n"
-//usage:       "	[-y SOCKPRIO]"
+//usage:       "	[-y SOCKPRIO] [-z L3PRIO]"
 //usage:#define udhcpc_full_usage "\n"
 //usage:     "\n	-i IFACE	Interface to use (default "CONFIG_UDHCPC_DEFAULT_INTERFACE")"
 //usage:	IF_FEATURE_UDHCP_PORT(
@@ -1193,6 +1204,7 @@ static void client_background(void)
 //usage:     "\n	-V VENDOR	Vendor identifier (default 'udhcp VERSION')"
 //usage:     "\n	-C		Don't send MAC as client identifier"
 //usage:     "\n	-y SOCKPRIO	Set priority on socket"
+//usage:     "\n	-z L3PRIO	Set DSCP on IP packets"
 //usage:	IF_UDHCP_VERBOSE(
 //usage:     "\n	-v		Verbose"
 //usage:	)
@@ -1228,6 +1240,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 	IF_FEATURE_UDHCP_PORT(SERVER_PORT = 67;)
 	IF_FEATURE_UDHCP_PORT(CLIENT_PORT = 68;)
 	client_data.sock_prio = -1;
+	client_data.l3_prio = -1;
 	client_data.interface = CONFIG_UDHCPC_DEFAULT_INTERFACE;
 	client_data.script = CONFIG_UDHCPC_DEFAULT_SCRIPT;
 	client_data.sockfd = -1;
@@ -1239,8 +1252,8 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 
 	/* Parse command line */
 	opt = getopt32long(argv, "^"
-		/* O,x: list; -T,-t,-A,-y take numeric param */
-		"CV:F:i:np:qRr:s:T:+t:+SA:+O:*ox:*fU:y:+B"
+		/* O,x: list; -T,-t,-A,-y,-z take numeric param */
+		"CV:F:i:np:qRr:s:T:+t:+SA:+O:*ox:*fU:y:+z:+B"
 		USE_FOR_MMU("b")
 		IF_FEATURE_UDHCPC_ARPING("a::")
 		IF_FEATURE_UDHCP_PORT("P:")
@@ -1255,7 +1268,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 		, &list_O
 		, &list_x
 		, &str_U
-		, &client_data.sock_prio /* y */
+		, &client_data.sock_prio, &client_data.l3_prio /* y,z */
 		IF_FEATURE_UDHCPC_ARPING(, &str_a)
 		IF_FEATURE_UDHCP_PORT(, &str_P)
 		IF_UDHCP_VERBOSE(, &dhcp_verbose)
