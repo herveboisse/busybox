@@ -89,7 +89,7 @@ struct d6_option {
  * is prepared to perform the Solicit-Reply message exchange..." */
 //#define D6_OPT_RAPID_COMMIT  14	/* zero-length option */
 #define D6_OPT_USER_CLASS    15
-//#define D6_OPT_VENDOR_CLASS  16
+#define D6_OPT_VENDOR_CLASS  16
 //#define D6_OPT_VENDOR_OPTS   17
 //#define D6_OPT_INTERFACE_ID  18
 //#define D6_OPT_RECONF_MSG    19
