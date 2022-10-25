@@ -352,7 +352,8 @@ void* FAST_FUNC udhcp_insert_new_option(struct option_set **opt_list,
 
 void FAST_FUNC udhcp_parse_user_class(struct option_set **opt_list,
 		const char *str,
-		unsigned code);
+		unsigned code,
+		bool dhcpv6);
 
 /* 2nd param is "struct option_set**" */
 #if !ENABLE_UDHCPC6

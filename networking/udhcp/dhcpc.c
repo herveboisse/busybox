@@ -1358,7 +1358,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 	if (opt & OPT_U) {
 		udhcp_parse_user_class(
 				&client_data.options, str_U,
-				DHCP_USER_CLASS);
+				DHCP_USER_CLASS, /*dhcpv6:*/ 0);
 	}
 
 	clientid_mac_ptr = NULL;

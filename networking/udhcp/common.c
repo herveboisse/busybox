@@ -489,23 +489,31 @@ void* FAST_FUNC udhcp_insert_new_option(
 
 void FAST_FUNC udhcp_parse_user_class(struct option_set **opt_list,
 		const char *str,
-		unsigned code)
+		unsigned code,
+		bool dhcpv6)
 {
 	const char *p, *e;
 	uint8_t *o;
-	size_t totlen = 0;
+	size_t maxlen, totlen = 0;
+
+	if (dhcpv6)
+		maxlen = MAXINT(uint16_t);
+	else
+		maxlen = MAXINT(uint8_t);
 
 	/* first pass, only determine total option length */
 	p = str;
 	totlen = 0;
 	do {
-		size_t len = MAXINT(uint8_t);
+		size_t len = maxlen;
 		e = strchr(p, ',');
 		if (e)
 			len = MIN(len, e - p);
 		len = strnlen(p, len);
 		if (len < 0)
 			; /* ignore empty instance */
+		else if (dhcpv6)
+			totlen += 2 + len;
 		else
 			totlen += 1 + len;
 		p = e + 1;
@@ -514,20 +522,28 @@ void FAST_FUNC udhcp_parse_user_class(struct option_set **opt_list,
 	if (totlen <= 0)
 		return;
 
-	o = udhcp_insert_new_option(opt_list, code, totlen, /*dynamic:*/ 0);
-	o += OPT_DATA;
+	o = udhcp_insert_new_option(opt_list, code, totlen, /*dynamic:*/ 0, dhcpv6);
+	if (dhcpv6)
+		o += D6_OPT_DATA;
+	else
+		o += OPT_DATA;
 
 	/* second pass, actually copy data */
 	p = str;
 	do {
-		size_t len = MAXINT(uint8_t);
+		size_t len = maxlen;
 		e = strchr(p, ',');
 		if (e)
 			len = MIN(len, e - p);
 		len = strnlen(p, len);
 		if (len <= 0) {
 			/* ignore empty instance */
-		} else {
+		} else if (dhcpv6) {
+			o[0] = len >> 8;
+			o[1] = len & 0xff;
+			memcpy(&o[2], p, len);
+			o += 2 + len;
+		} else { /* dhcpv4 */
 			o[0] = len;
 			memcpy(&o[1], p, len);
 			o += 1 + len;

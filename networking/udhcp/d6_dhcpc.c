@@ -149,9 +149,10 @@ enum {
 	OPT_x = 1 << 13,
 	OPT_f = 1 << 14,
 	OPT_l = 1 << 15,
-	OPT_d = 1 << 16,
+	OPT_U = 1 << 16,
+	OPT_d = 1 << 17,
 /* The rest has variable bit positions, need to be clever */
-	OPTBIT_d = 16,
+	OPTBIT_d = 17,
 	USE_FOR_MMU(             OPTBIT_b,)
 	///IF_FEATURE_UDHCPC_ARPING(OPTBIT_a,)
 	IF_FEATURE_UDHCP_PORT(   OPTBIT_P,)
@@ -1151,7 +1152,8 @@ static void client_background(void)
 //usage:#endif
 //usage:#define udhcpc6_trivial_usage
 //usage:       "[-fbq"IF_UDHCP_VERBOSE("v")"R] [-t N] [-T SEC] [-A SEC|-n] [-i IFACE] [-s PROG]\n"
-//usage:       "	[-p PIDFILE]"IF_FEATURE_UDHCP_PORT(" [-P PORT]")" [-ldo] [-r IPv6] [-x OPT:VAL]... [-O OPT]..."
+//usage:       "	[-p PIDFILE]"IF_FEATURE_UDHCP_PORT(" [-P PORT]")" [-ldo] [-r IPv6] [-x OPT:VAL]... [-O OPT]...\n"
+//usage:       "	[-U U1[,U2,...]]"
 //usage:#define udhcpc6_full_usage "\n"
 //usage:     "\n	-i IFACE	Interface to use (default "CONFIG_UDHCPC_DEFAULT_INTERFACE")"
 //usage:     "\n	-p FILE		Create pidfile"
@@ -1183,6 +1185,7 @@ static void client_background(void)
 //usage:     "\n			Examples of string, numeric, hex byte and dynamic opts:"
 //usage:     "\n			-x 1:0003000100BEEFC0FFEE - option 1 (client id)"
 //usage:     "\n			-x 11:/usr/bin/generator - option 11 (authentication, dynamically generated)"
+//usage:     "\n	-U U1[,U2,...]	User class"
 //usage:	IF_UDHCP_VERBOSE(
 //usage:     "\n	-v		Verbose"
 //usage:	)
@@ -1193,7 +1196,7 @@ static void client_background(void)
 int udhcpc6_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 {
-	const char *str_r;
+	const char *str_r, *str_U;
 	IF_FEATURE_UDHCP_PORT(char *str_P;)
 	uint8_t *clientid_mac_ptr;
 	llist_t *list_O = NULL;
@@ -1228,7 +1231,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 	/* Parse command line */
 	opt = getopt32long(argv, "^"
 		/* O,x: list; -T,-t,-A take numeric param */
-		"i:np:qRr:s:T:+t:+SA:+O:*ox:*fld"
+		"i:np:qRr:s:T:+t:+SA:+O:*ox:*flU:d"
 		USE_FOR_MMU("b")
 		///IF_FEATURE_UDHCPC_ARPING("a")
 		IF_FEATURE_UDHCP_PORT("P:")
@@ -1240,6 +1243,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 		, &solicit_timeout, &solicit_retries, &tryagain_timeout /* T,t,A */
 		, &list_O
 		, &list_x
+		, &str_U
 		IF_FEATURE_UDHCP_PORT(, &str_P)
 		IF_UDHCP_VERBOSE(, &dhcp_verbose)
 	);
@@ -1289,6 +1293,11 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 				/*dhcpv6:*/ 1
 		);
 		free(optstr);
+	}
+	if (opt & OPT_U) {
+		udhcp_parse_user_class(
+				&client_data.options, str_U,
+				D6_OPT_USER_CLASS, /*dhcpv6:*/ 1);
 	}
 
 	clientid_mac_ptr = NULL;
