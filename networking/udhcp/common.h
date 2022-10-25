@@ -174,7 +174,7 @@ struct dhcp_scan_state {
 #define DHCP_CLIENT_ID          0x3d /* 61: by default client's MAC addr, but may be arbitrarily long */
 //#define DHCP_TFTP_SERVER_NAME 0x42 /* 66: same as 'sname' field */
 //#define DHCP_BOOT_FILE        0x43 /* 67: same as 'file' field */
-//#define DHCP_USER_CLASS       0x4d /* 77: RFC 3004. set of LASCII strings. "I am a printer" etc */
+#define DHCP_USER_CLASS       0x4d /* 77: RFC 3004. set of LASCII strings. "I am a printer" etc */
 //                              0x50 /* 80: rapid commit ("I'm ok with getting immediate ACK, not just OFFER"), 0 bytes */
 #define DHCP_FQDN               0x51 /* 81: client asks to update DNS to map its FQDN to its new IP */
 //#define DHCP_PCODE            0x64 /* 100: RFC 4833. IEEE 1003.1 TZ string */
@@ -346,6 +346,10 @@ void* FAST_FUNC udhcp_insert_new_option(struct option_set **opt_list,
 		unsigned code,
 		unsigned length,
 		bool dhcpv6);
+
+void FAST_FUNC udhcp_parse_user_class(struct option_set **opt_list,
+		const char *str,
+		unsigned code);
 
 /* 2nd param is "struct option_set**" */
 #if !ENABLE_UDHCPC6

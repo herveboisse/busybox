@@ -99,9 +99,10 @@ enum {
 	OPT_o = 1 << 15,
 	OPT_x = 1 << 16,
 	OPT_f = 1 << 17,
-	OPT_B = 1 << 18,
+	OPT_U = 1 << 18,
+	OPT_B = 1 << 19,
 /* The rest has variable bit positions, need to be clever */
-	OPTBIT_B = 18,
+	OPTBIT_B = 19,
 	USE_FOR_MMU(             OPTBIT_b,)
 	IF_FEATURE_UDHCPC_ARPING(OPTBIT_a,)
 	IF_FEATURE_UDHCP_PORT(   OPTBIT_P,)
@@ -1153,7 +1154,7 @@ static void client_background(void)
 //usage:#define udhcpc_trivial_usage
 //usage:       "[-fbq"IF_UDHCP_VERBOSE("v")"RB]"IF_FEATURE_UDHCPC_ARPING(" [-a[MSEC]]")" [-t N] [-T SEC] [-A SEC|-n]\n"
 //usage:       "	[-i IFACE]"IF_FEATURE_UDHCP_PORT(" [-P PORT]")" [-s PROG] [-p PIDFILE]\n"
-//usage:       "	[-oC] [-r IP] [-V VENDOR] [-F NAME] [-x OPT:VAL]... [-O OPT]..."
+//usage:       "	[-oC] [-r IP] [-U U1[,U2,...]] [-V VENDOR] [-F NAME] [-x OPT:VAL]... [-O OPT]..."
 //usage:#define udhcpc_full_usage "\n"
 //usage:     "\n	-i IFACE	Interface to use (default "CONFIG_UDHCPC_DEFAULT_INTERFACE")"
 //usage:	IF_FEATURE_UDHCP_PORT(
@@ -1186,6 +1187,7 @@ static void client_background(void)
 //usage:     "\n			-x 0x3d:0100BEEFC0FFEE - option 61 (client id)"
 //usage:     "\n			-x 14:'\"dumpfile\"' - option 14 (shell-quoted)"
 //usage:     "\n	-F NAME		Ask server to update DNS mapping for NAME"
+//usage:     "\n	-U U1[,U2,...]	User class"
 //usage:     "\n	-V VENDOR	Vendor identifier (default 'udhcp VERSION')"
 //usage:     "\n	-C		Don't send MAC as client identifier"
 //usage:	IF_UDHCP_VERBOSE(
@@ -1199,7 +1201,7 @@ int udhcpc_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 {
 	uint8_t *message;
-	const char *str_V, *str_F, *str_r;
+	const char *str_V, *str_F, *str_r, *str_U;
 	IF_FEATURE_UDHCPC_ARPING(const char *str_a = "2000";)
 	IF_FEATURE_UDHCP_PORT(char *str_P;)
 	uint8_t *clientid_mac_ptr;
@@ -1234,7 +1236,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 	/* Parse command line */
 	opt = getopt32long(argv, "^"
 		/* O,x: list; -T,-t,-A take numeric param */
-		"CV:F:i:np:qRr:s:T:+t:+SA:+O:*ox:*fB"
+		"CV:F:i:np:qRr:s:T:+t:+SA:+O:*ox:*fU:B"
 		USE_FOR_MMU("b")
 		IF_FEATURE_UDHCPC_ARPING("a::")
 		IF_FEATURE_UDHCP_PORT("P:")
@@ -1248,6 +1250,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 		, &discover_timeout, &discover_retries, &tryagain_timeout /* T,t,A */
 		, &list_O
 		, &list_x
+		, &str_U
 		IF_FEATURE_UDHCPC_ARPING(, &str_a)
 		IF_FEATURE_UDHCP_PORT(, &str_P)
 		IF_UDHCP_VERBOSE(, &dhcp_verbose)
@@ -1315,6 +1318,11 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 				&client_data.options, DHCP_VENDOR,
 				len, /*dhcp6:*/ 0);
 		memcpy(p + OPT_DATA, str_V, len); /* do not store NUL byte */
+	}
+	if (opt & OPT_U) {
+		udhcp_parse_user_class(
+				&client_data.options, str_U,
+				DHCP_USER_CLASS);
 	}
 
 	clientid_mac_ptr = NULL;

@@ -485,6 +485,55 @@ void* FAST_FUNC udhcp_insert_new_option(
 	return new->data;
 }
 
+void FAST_FUNC udhcp_parse_user_class(struct option_set **opt_list,
+		const char *str,
+		unsigned code)
+{
+	const char *p, *e;
+	uint8_t *o;
+	size_t totlen = 0;
+
+	/* first pass, only determine total option length */
+	p = str;
+	totlen = 0;
+	do {
+		size_t len = MAXINT(uint8_t);
+		e = strchr(p, ',');
+		if (e)
+			len = MIN(len, e - p);
+		len = strnlen(p, len);
+		if (len < 0)
+			; /* ignore empty instance */
+		else
+			totlen += 1 + len;
+		p = e + 1;
+	} while (e != NULL);
+
+	if (totlen <= 0)
+		return;
+
+	o = udhcp_insert_new_option(opt_list, code, totlen, /*dynamic:*/ 0);
+	o += OPT_DATA;
+
+	/* second pass, actually copy data */
+	p = str;
+	do {
+		size_t len = MAXINT(uint8_t);
+		e = strchr(p, ',');
+		if (e)
+			len = MIN(len, e - p);
+		len = strnlen(p, len);
+		if (len <= 0) {
+			/* ignore empty instance */
+		} else {
+			o[0] = len;
+			memcpy(&o[1], p, len);
+			o += 1 + len;
+		}
+		p = e + 1;
+	} while (e != NULL);
+}
+
 /* udhcp_str2optset:
  * Parse string option representation to binary form and add it to opt_list.
  * Called to parse "udhcpc -x OPTNAME:OPTVAL"
