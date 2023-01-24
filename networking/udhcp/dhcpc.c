@@ -55,7 +55,7 @@ struct tpacket_auxdata {
 #if ENABLE_LONG_OPTS
 static const char udhcpc_longopts[] ALIGN1 =
 	"clientid-none\0"  No_argument       "C"
-	"vendorclass\0"    Required_argument "V" //deprecated
+	"vendorclass\0"    Required_argument "V"
 	"fqdn\0"           Required_argument "F"
 	"interface\0"      Required_argument "i"
 	"now\0"            No_argument       "n"
