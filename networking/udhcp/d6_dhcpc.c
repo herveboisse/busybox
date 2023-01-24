@@ -547,10 +547,10 @@ static uint8_t *add_d6_client_options(uint8_t *ptr)
 static int d6_mcast_from_client_data_ifindex(struct d6_packet *packet, uint8_t *end)
 {
 	/* FF02::1:2 is "All_DHCP_Relay_Agents_and_Servers" address */
-	static const uint8_t FF02__1_2[16] ALIGNED(sizeof(long)) = {
+	static const struct in6_addr FF02__1_2 = {.s6_addr = {
 		0xFF, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02,
-	};
+	}};
 	/* IPv6 requires different multicast contents in Ethernet Frame (RFC 2464) */
 	static const uint8_t MAC_DHCP6MCAST_ADDR[6] ALIGN2 = {
 		0x33, 0x33, 0x00, 0x01, 0x00, 0x02,
@@ -559,7 +559,7 @@ static int d6_mcast_from_client_data_ifindex(struct d6_packet *packet, uint8_t *
 	return d6_send_raw_packet_from_client_data_ifindex(
 		packet, (end - (uint8_t*) packet),
 		/*src*/ &client6_data.ll_ip6, CLIENT_PORT6,
-		/*dst*/ (const struct in6_addr*)FF02__1_2, SERVER_PORT6, MAC_DHCP6MCAST_ADDR
+		/*dst*/ &FF02__1_2, SERVER_PORT6, MAC_DHCP6MCAST_ADDR
 	);
 }
 
