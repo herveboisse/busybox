@@ -531,8 +531,10 @@ static uint8_t *add_d6_client_options(uint8_t *ptr)
 		ptr = start;
 
 #if ENABLE_FEATURE_UDHCPC6_RFC4704
-	ptr = mempcpy(ptr, &opt_fqdn_req, sizeof(opt_fqdn_req));
+	if (client_data.opt_mask[D6_OPT_CLIENT_FQDN >> 3] & (1 << (D6_OPT_CLIENT_FQDN & 7)))
+		ptr = mempcpy(ptr, &opt_fqdn_req, sizeof(opt_fqdn_req));
 #endif
+
 	/* Add -x options if any */
 	curr = client_data.options;
 	while (curr) {
