@@ -178,14 +178,14 @@ int FAST_FUNC d6_recv_kernel_packet(
 
 int FAST_FUNC d6_send_raw_packet_from_client_data_ifindex(
 		struct d6_packet *d6_pkt, unsigned d6_pkt_size,
-		struct in6_addr *src_ipv6, int source_port,
-		struct in6_addr *dst_ipv6, int dest_port, const uint8_t *dest_arp
+		const struct in6_addr *src_ipv6, int source_port,
+		const struct in6_addr *dst_ipv6, int dest_port, const uint8_t *dest_arp
 );
 
 int FAST_FUNC d6_send_kernel_packet_from_client_data_ifindex(
 		struct d6_packet *d6_pkt, unsigned d6_pkt_size,
-		struct in6_addr *src_ipv6, int source_port,
-		struct in6_addr *dst_ipv6, int dest_port
+		const struct in6_addr *src_ipv6, int source_port,
+		const struct in6_addr *dst_ipv6, int dest_port
 );
 
 #if defined CONFIG_UDHCP_DEBUG && CONFIG_UDHCP_DEBUG >= 2

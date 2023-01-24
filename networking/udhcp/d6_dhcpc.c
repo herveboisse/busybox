@@ -559,7 +559,7 @@ static int d6_mcast_from_client_data_ifindex(struct d6_packet *packet, uint8_t *
 	return d6_send_raw_packet_from_client_data_ifindex(
 		packet, (end - (uint8_t*) packet),
 		/*src*/ &client6_data.ll_ip6, CLIENT_PORT6,
-		/*dst*/ (struct in6_addr*)FF02__1_2, SERVER_PORT6, MAC_DHCP6MCAST_ADDR
+		/*dst*/ (const struct in6_addr*)FF02__1_2, SERVER_PORT6, MAC_DHCP6MCAST_ADDR
 	);
 }
 
@@ -685,7 +685,7 @@ static NOINLINE int send_d6_info_request(void)
       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  */
 /* NOINLINE: limit stack usage in caller */
-static NOINLINE int send_d6_discover(struct in6_addr *requested_ipv6)
+static NOINLINE int send_d6_discover(const struct in6_addr *requested_ipv6)
 {
 	struct d6_packet packet;
 	uint8_t *opt_ptr;
@@ -837,7 +837,7 @@ static NOINLINE int send_d6_select(void)
  * about parameter values the client would like to have returned.
  */
 /* NOINLINE: limit stack usage in caller */
-static NOINLINE int send_d6_renew(struct in6_addr *server_ipv6, struct in6_addr *our_cur_ipv6)
+static NOINLINE int send_d6_renew(const struct in6_addr *server_ipv6, const struct in6_addr *our_cur_ipv6)
 {
 	struct d6_packet packet;
 	uint8_t *opt_ptr;
@@ -872,7 +872,7 @@ static NOINLINE int send_d6_renew(struct in6_addr *server_ipv6, struct in6_addr 
 /* Unicast a DHCP release message */
 static
 ALWAYS_INLINE /* one caller, help compiler to use this fact */
-int send_d6_release(struct in6_addr *server_ipv6, struct in6_addr *our_cur_ipv6)
+int send_d6_release(const struct in6_addr *server_ipv6, const struct in6_addr *our_cur_ipv6)
 {
 	struct d6_packet packet;
 	uint8_t *opt_ptr;
@@ -1088,7 +1088,7 @@ static void change_listen_mode(int new_mode)
 	/* else LISTEN_NONE: client_data.sockfd stays closed */
 }
 
-static void perform_d6_release(struct in6_addr *server_ipv6, struct in6_addr *our_cur_ipv6)
+static void perform_d6_release(const struct in6_addr *server_ipv6, const struct in6_addr *our_cur_ipv6)
 {
 	change_listen_mode(LISTEN_NONE);
 

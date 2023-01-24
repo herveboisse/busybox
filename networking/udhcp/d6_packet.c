@@ -53,8 +53,8 @@ int FAST_FUNC d6_recv_kernel_packet(struct in6_addr *peer_ipv6 UNUSED_PARAM,
 /* Construct a ipv6+udp header for a packet, send packet */
 int FAST_FUNC d6_send_raw_packet_from_client_data_ifindex(
 		struct d6_packet *d6_pkt, unsigned d6_pkt_size,
-		struct in6_addr *src_ipv6, int source_port,
-		struct in6_addr *dst_ipv6, int dest_port, const uint8_t *dest_arp)
+		const struct in6_addr *src_ipv6, int source_port,
+		const struct in6_addr *dst_ipv6, int dest_port, const uint8_t *dest_arp)
 {
 	struct sockaddr_ll dest_sll;
 	struct ip6_udp_d6_packet packet;
@@ -138,8 +138,8 @@ int FAST_FUNC d6_send_raw_packet_from_client_data_ifindex(
 /* Let the kernel do all the work for packet generation */
 int FAST_FUNC d6_send_kernel_packet_from_client_data_ifindex(
 		struct d6_packet *d6_pkt, unsigned d6_pkt_size,
-		struct in6_addr *src_ipv6, int source_port,
-		struct in6_addr *dst_ipv6, int dest_port)
+		const struct in6_addr *src_ipv6, int source_port,
+		const struct in6_addr *dst_ipv6, int dest_port)
 {
 	struct sockaddr_in6 sa;
 	int fd;
