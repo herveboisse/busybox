@@ -16,7 +16,7 @@
 //kbuild:lib-$(CONFIG_ARPING) += arping.o
 
 //usage:#define arping_trivial_usage
-//usage:       "[-fqbDUA] [-c CNT] [-w TIMEOUT] [-I IFACE] [-s SRC_IP] DST_IP"
+//usage:       "[-fqbDUA] [-c CNT] [-w TIMEOUT] [-I IFACE] [-s SRC_IP] [-y SOCKPRIO] DST_IP"
 //usage:#define arping_full_usage "\n\n"
 //usage:       "Send ARP requests/replies\n"
 //usage:     "\n	-f		Quit on first ARP reply"
@@ -30,6 +30,7 @@
 //NB: in iputils-s20160308, iface is mandatory, no default
 //usage:     "\n	-I IFACE	Interface to use (default eth0)"
 //usage:     "\n	-s SRC_IP	Sender IP address"
+//usage:     "\n	-y SOCKPRIO	Set priority on socket"
 //usage:     "\n	DST_IP		Target IP address"
 
 #include <arpa/inet.h>
@@ -53,13 +54,13 @@ enum {
 	UNICASTING    = 1 << 6,
 	TIMEOUT       = 1 << 7,
 };
-#define GETOPT32(str_timeout, device, source) \
+#define GETOPT32(str_timeout, device, source, sock_prio) \
 	getopt32(argv, "^" \
-		"UDAqfbc:+w:I:s:" \
+		"UDAqfbc:+w:I:s:y:+" \
 		/* DAD also sets quit_on_reply, */ \
 		/* advert also sets unsolicited: */ \
 		"\0" "=1:Df:AU", \
-		&count, &str_timeout, &device, &source \
+		&count, &str_timeout, &device, &source, &sock_prio \
 	);
 
 struct globals {
@@ -298,6 +299,7 @@ int arping_main(int argc UNUSED_PARAM, char **argv)
 	char *source = NULL;
 	char *target;
 	char *err_str;
+	int sock_prio = 0;
 
 	INIT_G();
 
@@ -311,10 +313,13 @@ int arping_main(int argc UNUSED_PARAM, char **argv)
 		unsigned opt;
 		char *str_timeout;
 
-		opt = GETOPT32(str_timeout, device, source);
+		opt = GETOPT32(str_timeout, device, source, sock_prio);
 		if (opt & TIMEOUT)
 			timeout_us = xatou_range(str_timeout, 0, INT_MAX/2000000) * 1000000 + 500000;
 	}
+
+	if (sock_prio >= 0 && setsockopt_SOL_SOCKET_int(sock_fd, SO_PRIORITY, sock_prio) != 0)
+		bb_simple_perror_msg("SO_PRIORITY");
 
 	target = argv[optind];
 	err_str = xasprintf("interface %s %%s", device);
