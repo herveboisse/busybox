@@ -1036,6 +1036,10 @@ int udhcpd_main(int argc UNUSED_PARAM, char **argv)
 			bb_info_msg("received %s", "SIGTERM");
 			write_leases();
 			goto ret0;
+		case SIGINT:
+			bb_info_msg("received %s", "SIGINT");
+			write_leases();
+			goto ret0;
 		}
 
 		/* Is it a packet? */

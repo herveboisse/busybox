@@ -1601,6 +1601,9 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
 		case SIGTERM:
 			bb_info_msg("received %s", "SIGTERM");
 			goto ret0;
+		case SIGINT:
+			bb_info_msg("received %s", "SIGINT");
+			goto ret0;
 		}
 
 		/* Is it a packet? */

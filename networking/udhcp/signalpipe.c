@@ -59,6 +59,7 @@ void FAST_FUNC udhcp_sp_setup(void)
 		+ (1 << SIGUSR1)
 		+ (1 << SIGUSR2)
 		+ (1 << SIGTERM)
+		+ (1 << SIGINT)
 		, signal_handler);
 }
 
