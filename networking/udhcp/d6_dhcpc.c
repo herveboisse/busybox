@@ -1137,7 +1137,6 @@ static void client_background(void)
 //usage:     "\n	-i IFACE	Interface to use (default "CONFIG_UDHCPC_DEFAULT_INTERFACE")"
 //usage:     "\n	-p FILE		Create pidfile"
 //usage:     "\n	-s PROG		Run PROG at DHCP events (default "CONFIG_UDHCPC6_DEFAULT_SCRIPT")"
-//usage:     "\n	-B		Request broadcast replies"
 //usage:     "\n	-t N		Send up to N discover packets"
 //usage:     "\n	-T SEC		Pause between packets (default 3)"
 //usage:     "\n	-A SEC		Wait if lease is not obtained (default 20)"
