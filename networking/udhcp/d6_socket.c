@@ -56,18 +56,10 @@ int FAST_FUNC d6_read_interface(
 		if (ifa->ifa_addr->sa_family == AF_INET6
 		 && IN6_IS_ADDR_LINKLOCAL(&sip6->sin6_addr)
 		) {
+			char str[INET6_ADDRSTRLEN];
 			*nip6 = sip6->sin6_addr; /* struct copy */
-			log1(
-				"IPv6 %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
-				nip6->s6_addr[0], nip6->s6_addr[1],
-				nip6->s6_addr[2], nip6->s6_addr[3],
-				nip6->s6_addr[4], nip6->s6_addr[5],
-				nip6->s6_addr[6], nip6->s6_addr[7],
-				nip6->s6_addr[8], nip6->s6_addr[9],
-				nip6->s6_addr[10], nip6->s6_addr[11],
-				nip6->s6_addr[12], nip6->s6_addr[13],
-				nip6->s6_addr[14], nip6->s6_addr[15]
-			);
+			inet_ntop(AF_INET6, nip6, str, sizeof(str));
+			log1("IPv6 %s", str);
 			retval &= (3 - (1<<1));
 		}
 	}

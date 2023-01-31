@@ -254,7 +254,7 @@ static void option_to_env(const uint8_t *option, const uint8_t *option_end)
 
 	while (len_m4 >= 0) {
 		uint32_t v32;
-		char ipv6str[sizeof("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")];
+		char ipv6str[INET6_ADDRSTRLEN];
 
 		if (option[0] != 0 || option[2] != 0)
 			break;
@@ -351,13 +351,12 @@ static void option_to_env(const uint8_t *option, const uint8_t *option_end)
 			addrs = option[3] >> 4;
 
 			/* Setup environment variable */
-			*new_env() = dlist = xmalloc(4 + addrs * 40 - 1);
+			*new_env() = dlist = xmalloc(4 + addrs * (INET6_ADDRSTRLEN + 1) - 1);
 			dlist = stpcpy(dlist, "dns=");
 			option_offset = 0;
 
 			while (addrs--) {
-				sprint_nip6(dlist, option + 4 + option_offset);
-				dlist += 39;
+				dlist += sprint_nip6(dlist, option + 4 + option_offset);
 				option_offset += 16;
 				if (addrs)
 					*dlist++ = ' ';
