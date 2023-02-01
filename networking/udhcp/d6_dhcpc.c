@@ -1657,15 +1657,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 //in outgoing packets. (why DHCPv6 even introduced it is a mystery).
 				free(client6_data.server_id);
 				client6_data.server_id = option;
-				if (packet.d6_msg_type == D6_MSG_ADVERTISE) {
-					/* enter requesting state */
-					change_listen_mode(LISTEN_RAW);
-					client_data.state = REQUESTING;
-					timeout = 0;
-					packet_num = 0;
-					continue;
-				}
-				/* It's a D6_MSG_REPLY */
+
 /*
  * RFC 3315 18.1.8. Receipt of Reply Messages
  *
@@ -1822,6 +1814,17 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 						"prefix", /*inet_ntoa(temp_addr),*/ (unsigned)lease_seconds);
 					prefix_timeout = lease_seconds;
 				}
+
+				if (packet.d6_msg_type == D6_MSG_ADVERTISE) {
+					/* enter requesting state */
+					change_listen_mode(LISTEN_RAW);
+					client_data.state = REQUESTING;
+					timeout = 0;
+					packet_num = 0;
+					continue;
+				}
+				/* It's a D6_MSG_REPLY */
+
 				if (!address_timeout)
 					address_timeout = prefix_timeout;
 				if (!prefix_timeout)
