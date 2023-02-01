@@ -687,7 +687,7 @@ static NOINLINE int send_d6_info_request(void)
       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  */
 /* NOINLINE: limit stack usage in caller */
-static NOINLINE int send_d6_discover(const struct in6_addr *requested_ipv6)
+static NOINLINE int send_d6_solicit(const struct in6_addr *requested_ipv6)
 {
 	struct d6_packet packet;
 	uint8_t *opt_ptr;
@@ -731,7 +731,7 @@ static NOINLINE int send_d6_discover(const struct in6_addr *requested_ipv6)
 	 */
 	opt_ptr = add_d6_client_options(opt_ptr);
 
-	bb_info_msg("sending %s", "discover");
+	bb_info_msg("sending %s", "solicit");
 	return d6_mcast_from_client_data_ifindex(&packet, opt_ptr);
 }
 
@@ -977,9 +977,9 @@ static NOINLINE int d6_recv_raw_packet(struct in6_addr *peer_ipv6, struct d6_pac
 /* Values for client_data.state */
 /* initial state: (re)start DHCP negotiation */
 #define INIT_SELECTING  0
-/* discover was sent, DHCPOFFER reply received */
+/* Solicit was sent, Advertise reply received */
 #define REQUESTING      1
-/* select/renew was sent, DHCPACK reply received */
+/* Request/Renew was sent, Reply reply received */
 #define BOUND           2
 /* half of lease passed, want to renew it by sending unicast renew requests */
 #define RENEWING        3
@@ -1137,7 +1137,7 @@ static void client_background(void)
 //usage:     "\n	-i IFACE	Interface to use (default "CONFIG_UDHCPC_DEFAULT_INTERFACE")"
 //usage:     "\n	-p FILE		Create pidfile"
 //usage:     "\n	-s PROG		Run PROG at DHCP events (default "CONFIG_UDHCPC6_DEFAULT_SCRIPT")"
-//usage:     "\n	-t N		Send up to N discover packets"
+//usage:     "\n	-t N		Send up to N solicit packets"
 //usage:     "\n	-T SEC		Pause between packets (default 3)"
 //usage:     "\n	-A SEC		Wait if lease is not obtained (default 20)"
 //usage:	USE_FOR_MMU(
@@ -1179,8 +1179,8 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 	llist_t *list_O = NULL;
 	llist_t *list_x = NULL;
 	int tryagain_timeout = 20;
-	int discover_timeout = 3;
-	int discover_retries = 3;
+	int solicit_timeout = 3;
+	int solicit_retries = 3;
 	struct in6_addr srv6_buf;
 	struct in6_addr ipv6_buf;
 	struct in6_addr *requested_ipv6;
@@ -1217,7 +1217,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 		, udhcpc6_longopts
 		, &client_data.interface, &client_data.pidfile, &str_r /* i,p */
 		, &client_data.script /* s */
-		, &discover_timeout, &discover_retries, &tryagain_timeout /* T,t,A */
+		, &solicit_timeout, &solicit_retries, &tryagain_timeout /* T,t,A */
 		, &list_O
 		, &list_x
 		IF_FEATURE_UDHCP_PORT(, &str_P)
@@ -1363,7 +1363,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 		}
 
 		/* If timeout dropped to zero, time to become active:
-		 * resend discover/renew/whatever
+		 * resend Solicit/Renew/whatever
 		 */
 		if (retval == 0) {
 			/* When running on a bridge, the ifindex may have changed
@@ -1384,7 +1384,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 
 			switch (client_data.state) {
 			case INIT_SELECTING:
-				if (!discover_retries || packet_num < discover_retries) {
+				if (!solicit_retries || packet_num < solicit_retries) {
 					if (packet_num == 0) {
 						change_listen_mode(LISTEN_RAW);
 						client_data.xid = random_xid();
@@ -1393,8 +1393,8 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 					if (opt & OPT_l)
 						send_d6_info_request();
 					else
-						send_d6_discover(requested_ipv6);
-					timeout = discover_timeout;
+						send_d6_solicit(requested_ipv6);
+					timeout = solicit_timeout;
 					packet_num++;
 					continue;
 				}
@@ -1425,17 +1425,17 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 				packet_num = 0;
 				continue;
 			case REQUESTING:
-				if (!discover_retries || packet_num < discover_retries) {
+				if (!solicit_retries || packet_num < solicit_retries) {
 					/* send multicast select packet */
 					send_d6_select();
-					timeout = discover_timeout;
+					timeout = solicit_timeout;
 					packet_num++;
 					continue;
 				}
 				/* Timed out, go back to init state.
-				 * "discover...select...discover..." loops
+				 * "Solicit...select...Solicit..." loops
 				 * were seen in the wild. Treat them similarly
-				 * to "no response to discover" case */
+				 * to "no response to Solicit" case */
 				client_data.state = INIT_SELECTING;
 				goto leasefail;
 			case BOUND:
@@ -1462,7 +1462,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 						send_d6_info_request();
 					else
 						send_d6_renew(&srv6_buf, requested_ipv6);
-					timeout = discover_timeout;
+					timeout = solicit_timeout;
 					packet_num++;
 					continue;
 				} /* else: we had sent one packet, but got no reply */
@@ -1488,7 +1488,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 					else /* send a broadcast renew request */
 //TODO: send_d6_renew uses D6_MSG_RENEW message, should we use D6_MSG_REBIND here instead?
 						send_d6_renew(/*server_ipv6:*/ NULL, requested_ipv6);
-					timeout = discover_timeout;
+					timeout = solicit_timeout;
 					packet_num++;
 					continue;
 				}
@@ -1577,7 +1577,7 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 			if (len == -1) {
 				/* Error is severe, reopen socket */
 				bb_simple_error_msg("read error: "STRERROR_FMT", reopening socket" STRERROR_ERRNO);
-				sleep(discover_timeout); /* 3 seconds by default */
+				sleep(solicit_timeout); /* 3 seconds by default */
 				change_listen_mode(client_data.listen_mode); /* just close and reopen */
 			}
 			if (len < 0)
