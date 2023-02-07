@@ -176,36 +176,32 @@ static const char opt_fqdn_req[] = {
 
 /*** Utility functions ***/
 
-static void *d6_find_option(uint8_t *option, uint8_t *option_end, unsigned code)
+static struct d6_option *d6_find_option(uint8_t *option, uint8_t *option_end, unsigned code)
 {
-	/* "length minus 4" */
-	int len_m4 = option_end - option - 4;
-	while (len_m4 >= 0) {
-		/* Next option's len is too big? */
-		if (option[3] > len_m4)
-			return NULL; /* yes. bogus packet! */
-		/* So far we treat any opts with code >255
-		 * or len >255 as bogus, and stop at once.
-		 * This simplifies big-endian handling.
-		 */
-		if (option[0] != 0 || option[2] != 0)
-			return NULL;
-		/* Option seems to be valid */
+	struct d6_option *opt = (struct d6_option *)option;
+	while ((uint8_t *)&opt[1] <= option_end &&
+			(uint8_t *)d6_option_next(opt) <= option_end) {
 		/* Does its code match? */
-		if (option[1] == code)
-			return option; /* yes! */
-		len_m4 -= option[3] + 4;
-		option += option[3] + 4;
+		if (ntohs(opt->code) == code)
+			return opt; /* yes! */
+		opt = d6_option_next(opt);
 	}
 	return NULL;
 }
 
-static void *d6_copy_option(uint8_t *option, uint8_t *option_end, unsigned code)
+static inline void *d6_mempcpy_option(void *dst, const struct d6_option *opt)
 {
-	uint8_t *opt = d6_find_option(option, option_end, code);
+	if (!opt)
+		return dst;
+	return mempcpy(dst, opt, d6_option_total_len(opt));
+}
+
+static struct d6_option *d6_copy_option(uint8_t *option, uint8_t *option_end, unsigned code)
+{
+	struct d6_option *opt = d6_find_option(option, option_end, code);
 	if (!opt)
 		return opt;
-	return xmemdup(opt, opt[3] + 4);
+	return xmemdup(opt, d6_option_total_len(opt));
 }
 
 /*** Script execution code ***/
@@ -216,61 +212,46 @@ static char** new_env(void)
 	return &client6_data.env_ptr[client6_data.env_idx++];
 }
 
-static char *string_option_to_env(const uint8_t *option,
-		const uint8_t *option_end)
+static char *string_option_to_env(const struct d6_option *opt)
 {
 	const char *ptr, *name = NULL;
-	unsigned val_len;
-	int i;
+	unsigned i;
 
-	ptr = d6_option_strings;
-	i = 0;
-	while (*ptr) {
-		if (d6_optflags[i].code == option[1]) {
+	for (ptr = d6_option_strings, i = 0; *ptr; ptr += strlen(ptr) + 1, i++) {
+		if (d6_optflags[i].code == ntohs(opt->code)) {
 			name = ptr;
-			goto found;
+			break;
 		}
-		ptr += strlen(ptr) + 1;
-		i++;
 	}
-	bb_error_msg("can't find option name for 0x%x, skipping", option[1]);
-	return NULL;
-
- found:
-	val_len = (option[2] << 8) | option[3];
-	if (val_len + &option[D6_OPT_DATA] > option_end) {
-		bb_simple_error_msg("option data exceeds option length");
+	if (!name) {
+		bb_error_msg("can't find option name for 0x%x, skipping",
+				ntohs(opt->code));
 		return NULL;
 	}
-	return xasprintf("%s=%.*s", name, val_len, (char*)option + 4);
+
+	/* option data overflow check already done in calling function */
+	return xasprintf("%s=%.*s", name, ntohs(opt->len), (char *)opt->data);
 }
 
 /* put all the parameters into the environment */
 static void option_to_env(const uint8_t *option, const uint8_t *option_end)
 {
+	const struct d6_option *opt = (const struct d6_option *)option;
 #if ENABLE_FEATURE_UDHCPC6_RFC3646
 	int addrs, option_offset;
 #endif
-	/* "length minus 4" */
-	int len_m4 = option_end - option - 4;
 
-	while (len_m4 >= 0) {
+	while ((const uint8_t *)&opt[1] <= option_end &&
+			(const uint8_t *)d6_option_next(opt) <= option_end) {
 		uint32_t v32;
 		char ipv6str[INET6_ADDRSTRLEN];
 
-		if (option[0] != 0 || option[2] != 0)
-			break;
-
-		/* Check if option-length exceeds size of option */
-		if (option[3] > len_m4)
-			break;
-
-		switch (option[1]) {
+		switch (ntohs(opt->code)) {
 		//case D6_OPT_CLIENTID:
 		//case D6_OPT_SERVERID:
 		case D6_OPT_IA_NA:
 		case D6_OPT_IA_PD:
-			option_to_env(option + 16, option + 4 + option[3]);
+			option_to_env(opt->data + 4+4+4, (const uint8_t *)d6_option_next(opt));
 			break;
 		//case D6_OPT_IA_TA:
 		case D6_OPT_IAADDR:
@@ -290,13 +271,13 @@ static void option_to_env(const uint8_t *option, const uint8_t *option_end)
  * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  */
 			/* Make sure payload contains an address */
-			if (option[3] < 24)
+			if (ntohs(opt->len) < 24)
 				break;
 
-			sprint_nip6(ipv6str, option + 4);
+			sprint_nip6(ipv6str, opt->data);
 			*new_env() = xasprintf("ipv6=%s", ipv6str);
 
-			move_from_unaligned32(v32, option + 4 + 16 + 4);
+			move_from_unaligned32(v32, opt->data + 16 + 4);
 			v32 = ntohl(v32);
 			*new_env() = xasprintf("lease=%u", (unsigned)v32);
 			break;
@@ -334,23 +315,23 @@ static void option_to_env(const uint8_t *option, const uint8_t *option_end)
  * |               |
  * +-+-+-+-+-+-+-+-+
  */
-			move_from_unaligned32(v32, option + 4 + 4);
+			move_from_unaligned32(v32, opt->data + 4);
 			v32 = ntohl(v32);
 			*new_env() = xasprintf("ipv6prefix_lease=%u", (unsigned)v32);
 
-			sprint_nip6(ipv6str, option + 4 + 4 + 4 + 1);
-			*new_env() = xasprintf("ipv6prefix=%s/%u", ipv6str, (unsigned)(option[4 + 4 + 4]));
+			sprint_nip6(ipv6str, opt->data + 4 + 4 + 1);
+			*new_env() = xasprintf("ipv6prefix=%s/%u", ipv6str, (unsigned)(opt->data[4 + 4]));
 			break;
 #if ENABLE_FEATURE_UDHCPC6_RFC3646
 		case D6_OPT_DNS_SERVERS: {
 			char *dlist;
 
 			/* Make sure payload-size is a multiple of 16 */
-			if ((option[3] & 0x0f) != 0)
+			if ((ntohs(opt->len) & 0x0f) != 0)
 				break;
 
 			/* Get the number of addresses on the option */
-			addrs = option[3] >> 4;
+			addrs = ntohs(opt->len) >> 4;
 
 			/* Setup environment variable */
 			*new_env() = dlist = xmalloc(4 + addrs * (INET6_ADDRSTRLEN + 1) - 1);
@@ -358,7 +339,7 @@ static void option_to_env(const uint8_t *option, const uint8_t *option_end)
 			option_offset = 0;
 
 			while (addrs--) {
-				dlist += sprint_nip6(dlist, option + 4 + option_offset);
+				dlist += sprint_nip6(dlist, opt->data + option_offset);
 				option_offset += 16;
 				if (addrs)
 					*dlist++ = ' ';
@@ -369,7 +350,7 @@ static void option_to_env(const uint8_t *option, const uint8_t *option_end)
 		case D6_OPT_DOMAIN_LIST: {
 			char *dlist;
 
-			dlist = dname_dec(option + 4, (option[2] << 8) | option[3], "search=");
+			dlist = dname_dec(opt->data, ntohs(opt->len), "search=");
 			if (!dlist)
 				break;
 			*new_env() = dlist;
@@ -380,8 +361,6 @@ static void option_to_env(const uint8_t *option, const uint8_t *option_end)
 		case D6_OPT_CLIENT_FQDN: {
 			char *dlist;
 
-			if (option[3] == 0)
-				break;
 			/* Work around broken ISC DHCPD6.
 			 * ISC DHCPD6 does not implement RFC 4704 correctly: It says the first
 			 * byte of option-payload should contain flags where the bits 7-3 are
@@ -389,11 +368,11 @@ static void option_to_env(const uint8_t *option, const uint8_t *option_end)
 			 * writes the entire FQDN as string to option-payload. We assume a
 			 * broken server here if any of the reserved bits are set.
 			 */
-			if (option[4] & 0xf8) {
-				*new_env() = xasprintf("fqdn=%.*s", (int)option[3], (char*)option + 4);
+			if (opt->data[0] & 0xf8) {
+				*new_env() = xasprintf("fqdn=%.*s", ntohs(opt->len), (char *)opt->data);
 				break;
 			}
-			dlist = dname_dec(option + 5, (/*(option[2] << 8) |*/ option[3]) - 1, "fqdn=");
+			dlist = dname_dec(&opt->data[1], ntohs(opt->len) - 1, "fqdn=");
 			if (!dlist)
 				break;
 			*new_env() = dlist;
@@ -403,10 +382,10 @@ static void option_to_env(const uint8_t *option, const uint8_t *option_end)
 #if ENABLE_FEATURE_UDHCPC6_RFC4833
 		/* RFC 4833 Timezones */
 		case D6_OPT_TZ_POSIX:
-			*new_env() = xasprintf("tz=%.*s", (int)option[3], (char*)option + 4);
+			*new_env() = xasprintf("tz=%.*s", ntohs(opt->len), (char *)opt->data);
 			break;
 		case D6_OPT_TZ_NAME:
-			*new_env() = xasprintf("tz_name=%.*s", (int)option[3], (char*)option + 4);
+			*new_env() = xasprintf("tz_name=%.*s", ntohs(opt->len), (char *)opt->data);
 			break;
 #endif
 		case D6_OPT_BOOT_URL:
@@ -414,14 +393,13 @@ static void option_to_env(const uint8_t *option, const uint8_t *option_end)
 		case 0xd1: /* DHCP_PXE_CONF_FILE */
 		case 0xd2: /* DHCP_PXE_PATH_PREFIX */
 			{
-			char *tmp = string_option_to_env(option, option_end);
+			char *tmp = string_option_to_env(opt);
 			if (tmp)
 				*new_env() = tmp;
 			break;
 			}
 		}
-		len_m4 -= 4 + option[3];
-		option += 4 + option[3];
+		opt = d6_option_next(opt);
 	}
 }
 
@@ -723,16 +701,16 @@ static NOINLINE int send_d6_solicit(const struct in6_addr *requested_ipv6)
 	if (option_mask32 & OPT_r) {
 		len = requested_ipv6 ? 2+2+4+4+4 + 2+2+16+4+4 : 2+2+4+4+4;
 		client6_data.ia_na = xzalloc(len);
-		client6_data.ia_na->code = D6_OPT_IA_NA;
-		client6_data.ia_na->len = len - 4;
+		client6_data.ia_na->code = htons(D6_OPT_IA_NA);
+		client6_data.ia_na->len = htons(len - 4);
 		*(bb__aliased_uint32_t*)client6_data.ia_na->data = rand(); /* IAID */
 		if (requested_ipv6) {
 			struct d6_option *iaaddr = (void*)(client6_data.ia_na->data + 4+4+4);
-			iaaddr->code = D6_OPT_IAADDR;
-			iaaddr->len = 16+4+4;
+			iaaddr->code = htons(D6_OPT_IAADDR);
+			iaaddr->len = htons(16+4+4);
 			memcpy(iaaddr->data, requested_ipv6, 16);
 		}
-		opt_ptr = mempcpy(opt_ptr, client6_data.ia_na, len);
+		opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.ia_na);
 	}
 
 	/* IA_PD */
@@ -741,10 +719,10 @@ static NOINLINE int send_d6_solicit(const struct in6_addr *requested_ipv6)
 	if (option_mask32 & OPT_d) {
 		len = 2+2+4+4+4;
 		client6_data.ia_pd = xzalloc(len);
-		client6_data.ia_pd->code = D6_OPT_IA_PD;
-		client6_data.ia_pd->len = len - 4;
+		client6_data.ia_pd->code = htons(D6_OPT_IA_PD);
+		client6_data.ia_pd->len = htons(len - 4);
 		*(bb__aliased_uint32_t*)client6_data.ia_pd->data = rand(); /* IAID */
-		opt_ptr = mempcpy(opt_ptr, client6_data.ia_pd, len);
+		opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.ia_pd);
 	}
 
 	/* Add options: client-id,
@@ -796,13 +774,11 @@ static NOINLINE int send_d6_select(void)
 	opt_ptr = init_d6_packet(&packet, D6_MSG_REQUEST);
 
 	/* server id */
-	opt_ptr = mempcpy(opt_ptr, client6_data.server_id, client6_data.server_id->len + 2+2);
+	opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.server_id);
 	/* IA NA (contains requested IP) */
-	if (client6_data.ia_na)
-		opt_ptr = mempcpy(opt_ptr, client6_data.ia_na, client6_data.ia_na->len + 2+2);
+	opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.ia_na);
 	/* IA PD */
-	if (client6_data.ia_pd)
-		opt_ptr = mempcpy(opt_ptr, client6_data.ia_pd, client6_data.ia_pd->len + 2+2);
+	opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.ia_pd);
 
 	/* Add options: client-id,
 	 * "param req" option according to -O, options specified with -x
@@ -869,13 +845,11 @@ static NOINLINE int send_d6_renew(const struct in6_addr *server_ipv6, const stru
 	opt_ptr = init_d6_packet(&packet, D6_MSG_RENEW);
 
 	/* server id */
-	opt_ptr = mempcpy(opt_ptr, client6_data.server_id, client6_data.server_id->len + 2+2);
+	opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.server_id);
 	/* IA NA (contains requested IP) */
-	if (client6_data.ia_na)
-		opt_ptr = mempcpy(opt_ptr, client6_data.ia_na, client6_data.ia_na->len + 2+2);
+	opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.ia_na);
 	/* IA PD */
-	if (client6_data.ia_pd)
-		opt_ptr = mempcpy(opt_ptr, client6_data.ia_pd, client6_data.ia_pd->len + 2+2);
+	opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.ia_pd);
 
 	/* Add options: client-id,
 	 * "param req" option according to -O, options specified with -x
@@ -904,13 +878,11 @@ int send_d6_release(const struct in6_addr *server_ipv6, const struct in6_addr *o
 	/* Fill in: msg type, xid, ELAPSED_TIME */
 	opt_ptr = init_d6_packet(&packet, D6_MSG_RELEASE);
 	/* server id */
-	opt_ptr = mempcpy(opt_ptr, client6_data.server_id, client6_data.server_id->len + 2+2);
+	opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.server_id);
 	/* IA NA (contains our current IP) */
-	if (client6_data.ia_na)
-		opt_ptr = mempcpy(opt_ptr, client6_data.ia_na, client6_data.ia_na->len + 2+2);
+	opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.ia_na);
 	/* IA PD */
-	if (client6_data.ia_pd)
-		opt_ptr = mempcpy(opt_ptr, client6_data.ia_pd, client6_data.ia_pd->len + 2+2);
+	opt_ptr = d6_mempcpy_option(opt_ptr, client6_data.ia_pd);
 	/* Client-id */
 	ci = udhcp_find_option(client_data.options, D6_OPT_CLIENTID, /*dhcpv6:*/ 1);
 	if (ci)
@@ -1782,22 +1754,22 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 						bb_info_msg("no %s option%s", "IA_NA", ", ignoring packet");
 						continue;
 					}
-					if (client6_data.ia_na->len < (4 + 4 + 4) + (2 + 2 + 16 + 4 + 4)) {
+					if (ntohs(client6_data.ia_na->len) < (4 + 4 + 4) + (2 + 2 + 16 + 4 + 4)) {
 						bb_info_msg("%s option is too short:%d bytes",
-							"IA_NA", client6_data.ia_na->len);
+							"IA_NA", ntohs(client6_data.ia_na->len));
 						continue;
 					}
 					iaaddr = d6_find_option(client6_data.ia_na->data + 4 + 4 + 4,
-							client6_data.ia_na->data + client6_data.ia_na->len,
+							client6_data.ia_na->data + ntohs(client6_data.ia_na->len),
 							D6_OPT_IAADDR
 					);
 					if (!iaaddr) {
 						bb_info_msg("no %s option%s", "IAADDR", ", ignoring packet");
 						continue;
 					}
-					if (iaaddr->len < (16 + 4 + 4)) {
+					if (ntohs(iaaddr->len) < (16 + 4 + 4)) {
 						bb_info_msg("%s option is too short:%d bytes",
-							"IAADDR", iaaddr->len);
+							"IAADDR", ntohs(iaaddr->len));
 						continue;
 					}
 					/* Note: the address is sufficiently aligned for cast:
@@ -1820,22 +1792,22 @@ int udhcpc6_main(int argc UNUSED_PARAM, char **argv)
 						bb_info_msg("no %s option%s", "IA_PD", ", ignoring packet");
 						continue;
 					}
-					if (client6_data.ia_pd->len < (4 + 4 + 4) + (2 + 2 + 4 + 4 + 1 + 16)) {
+					if (ntohs(client6_data.ia_pd->len) < (4 + 4 + 4) + (2 + 2 + 4 + 4 + 1 + 16)) {
 						bb_info_msg("%s option is too short:%d bytes",
 							"IA_PD", client6_data.ia_pd->len);
 						continue;
 					}
 					iaprefix = d6_find_option(client6_data.ia_pd->data + 4 + 4 + 4,
-							client6_data.ia_pd->data + client6_data.ia_pd->len,
+							client6_data.ia_pd->data + ntohs(client6_data.ia_pd->len),
 							D6_OPT_IAPREFIX
 					);
 					if (!iaprefix) {
 						bb_info_msg("no %s option%s", "IAPREFIX", ", ignoring packet");
 						continue;
 					}
-					if (iaprefix->len < (4 + 4 + 1 + 16)) {
+					if (ntohs(iaprefix->len) < (4 + 4 + 1 + 16)) {
 						bb_info_msg("%s option is too short:%d bytes",
-							"IAPREFIX", iaprefix->len);
+							"IAPREFIX", ntohs(iaprefix->len));
 						continue;
 					}
 					move_from_unaligned32(lease_seconds, iaprefix->data + 4);

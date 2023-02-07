@@ -54,12 +54,20 @@ struct udp_d6_packet {
 /*** Options ***/
 
 struct d6_option {
-	uint8_t code_hi;
-	uint8_t code;
-	uint8_t len_hi;
-	uint8_t len;
-	uint8_t data[1];
+	uint16_t code;
+	uint16_t len;
+	uint8_t data[0];
 } PACKED;
+
+static inline unsigned d6_option_total_len(const struct d6_option *opt)
+{
+	return (sizeof(*opt) + ntohs(opt->len));
+}
+
+static inline struct d6_option *d6_option_next(const struct d6_option *opt)
+{
+	return (struct d6_option *)((uint8_t *)opt + d6_option_total_len(opt));
+}
 
 #define D6_OPT_CLIENTID       1
 #define D6_OPT_SERVERID       2

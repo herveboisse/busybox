@@ -222,7 +222,7 @@ struct dhcp_scan_state {
 
 struct dhcp_optflag {
 	uint8_t flags;
-	uint8_t code;
+	uint16_t code;
 };
 
 struct option_set {
@@ -259,7 +259,7 @@ uint8_t *dname_enc(/*const uint8_t *cstr, int clen,*/ const char *src, int *retl
 #define udhcp_find_option(opt_list, code, dhcpv6) \
 	udhcp_find_option(opt_list, code)
 #endif
-struct option_set *udhcp_find_option(struct option_set *opt_list, uint8_t code, bool dhcpv6) FAST_FUNC;
+struct option_set *udhcp_find_option(struct option_set *opt_list, uint16_t code, bool dhcpv6) FAST_FUNC;
 
 // RFC 2131  Table 5: Fields and options used by DHCP clients
 //

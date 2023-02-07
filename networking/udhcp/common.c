@@ -412,10 +412,10 @@ void FAST_FUNC udhcp_add_simple_option(struct dhcp_packet *packet, uint8_t code,
 #endif
 
 /* Find option 'code' in opt_list */
-struct option_set* FAST_FUNC udhcp_find_option(struct option_set *opt_list, uint8_t code, bool dhcpv6)
+struct option_set* FAST_FUNC udhcp_find_option(struct option_set *opt_list, uint16_t code, bool dhcpv6)
 {
 	IF_NOT_UDHCPC6(bool dhcpv6 = 0;)
-	uint8_t cur_code;
+	uint16_t cur_code;
 
 	for (;;) {
 		if (!opt_list)
@@ -423,10 +423,8 @@ struct option_set* FAST_FUNC udhcp_find_option(struct option_set *opt_list, uint
 		if (!dhcpv6) {
 			cur_code = opt_list->data[OPT_CODE];
 		} else {
-//FIXME: add support for code > 0xff
-			if (opt_list->data[D6_OPT_CODE] != 0)
-				return NULL;
-			cur_code = opt_list->data[D6_OPT_CODE + 1];
+			cur_code = (opt_list->data[D6_OPT_CODE] << 8) |
+					opt_list->data[D6_OPT_CODE + 1];
 		}
 		if (cur_code >= code) {
 			if (cur_code == code)
@@ -477,9 +475,18 @@ void* FAST_FUNC udhcp_insert_new_option(
 	new->dynamic = dynamic;
 
 	curr = opt_list;
-//FIXME: DHCP6 codes > 255!!
-	while (*curr && (*curr)->data[OPT_CODE] < code)
+	while (*curr) {
+		uint16_t cur_code;
+		if (!dhcpv6) {
+			cur_code = (*curr)->data[OPT_CODE];
+		} else {
+			cur_code = ((*curr)->data[D6_OPT_CODE] << 8) |
+					(*curr)->data[D6_OPT_CODE + 1];
+		}
+		if (cur_code >= code)
+			break;
 		curr = &(*curr)->next;
+	}
 
 	new->next = *curr;
 	*curr = new;
@@ -655,7 +662,7 @@ int FAST_FUNC udhcp_str2optset(const char *const_str, void *arg,
 		return 0;
 
 	optcode = bb_strtou(opt, NULL, 0);
-	if (!errno && optcode < 255) {
+	if (!errno) {
 		/* Raw (numeric) option code.
 		 * Initially assume binary (hex-str), but if "str" or 'str'
 		 * is seen later, switch to STRING.
