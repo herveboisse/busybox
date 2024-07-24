@@ -231,6 +231,7 @@ static int cbq_parse_opt(int argc, char **argv, struct nlmsghdr *n)
 	return 0;
 }
 #endif
+#ifdef TCA_CBQ_MAX
 static int cbq_print_opt(struct rtattr *opt)
 {
 	struct rtattr *tb[TCA_CBQ_MAX+1];
@@ -322,6 +323,13 @@ static int cbq_print_opt(struct rtattr *opt)
  done:
 	return 0;
 }
+#else
+static int cbq_print_opt(struct rtattr *opt)
+{
+	bb_error_msg("CBQ: not supported anymore");
+	return 1;
+}
+#endif
 
 static FAST_FUNC int print_qdisc(
 		const struct sockaddr_nl *who UNUSED_PARAM,
